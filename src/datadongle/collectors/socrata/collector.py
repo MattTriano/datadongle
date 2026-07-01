@@ -9,14 +9,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from loci.collectors.config import IncrementalConfig
-from loci.collectors.exceptions import SchemaDriftError
-from loci.collectors.socrata.client import SocrataClient
-from loci.collectors.socrata.metadata import SocrataTableMetadata
-from loci.collectors.socrata.spec import SocrataDatasetSpec
-from loci.parsers.csv_parser import parse_csv
-from loci.parsers.geojson import parse_geojson
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.config import IncrementalConfig
+from datadongle.collectors.exceptions import SchemaDriftError
+from datadongle.collectors.socrata.client import SocrataClient
+from datadongle.collectors.socrata.metadata import SocrataTableMetadata
+from datadongle.collectors.socrata.spec import SocrataDatasetSpec
+from datadongle.parsers.csv_parser import parse_csv
+from datadongle.parsers.geojson import parse_geojson
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,

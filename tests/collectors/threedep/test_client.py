@@ -9,14 +9,14 @@ from __future__ import annotations
 import numpy as np
 import pytest
 import rasterio
-from loci.collectors.threedep.client import (
+from datadongle.collectors.threedep.client import (
     tile_name,
     tile_url,
     tiles_for_bbox,
 )
-from loci.collectors.threedep.spec import ThreeDEPDatasetSpec
-from loci.geo import BBox
-from loci.raster.ingest import iter_tiles
+from datadongle.collectors.threedep.spec import ThreeDEPDatasetSpec
+from datadongle.geo import BBox
+from datadongle.raster.ingest import iter_tiles
 from rasterio.transform import from_origin
 
 # --------------------------------------------------------------------------

@@ -36,7 +36,7 @@ import math
 from pathlib import Path
 
 import requests
-from loci.geo import BBox
+from datadongle.geo import BBox
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 

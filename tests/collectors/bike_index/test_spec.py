@@ -1,7 +1,7 @@
 """Tests for BikeIndexDatasetSpec."""
 
 import pytest
-from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
+from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
 
 class TestBikeIndexDatasetSpec:

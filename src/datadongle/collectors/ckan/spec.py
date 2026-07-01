@@ -3,7 +3,7 @@
 CKANDatasetSpec — defines a CKAN dataset to collect.
 
 Usage:
-    from loci.collectors.ckan.spec import CKANDatasetSpec
+    from datadongle.collectors.ckan.spec import CKANDatasetSpec
 
     spec = CKANDatasetSpec(
         name="chicago_food_inspections",
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

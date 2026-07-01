@@ -3,8 +3,8 @@
 from unittest.mock import patch
 
 import pytest
-from loci.collectors.census.client import CensusClient
-from loci.collectors.census.spec import MAX_VARIABLES_PER_CALL, CensusDatasetSpec
+from datadongle.collectors.census.client import CensusClient
+from datadongle.collectors.census.spec import MAX_VARIABLES_PER_CALL, CensusDatasetSpec
 
 
 @pytest.fixture

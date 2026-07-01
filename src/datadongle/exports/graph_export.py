@@ -27,8 +27,8 @@ from pathlib import Path
 from typing import Any
 
 import networkx as nx
-from loci.db.core import PostgresEngine
-from loci.exports.graph_format import (
+from datadongle.db.core import PostgresEngine
+from datadongle.exports.graph_format import (
     NULL_STR_IDX,
     WriteEdge,
     WriteNode,
@@ -40,7 +40,7 @@ from loci.exports.graph_format import (
 logger = logging.getLogger(__name__)
 
 # Output S3 key for the binary format. Kept here so callers
-# (loci.environments, the Airflow deploy task, tofu env vars) can
+# (datadongle.environments, the Airflow deploy task, tofu env vars) can
 # import a single constant rather than duplicating the path string.
 GRAPH_S3_KEY = "graph/routing_graph.bin.gz"
 

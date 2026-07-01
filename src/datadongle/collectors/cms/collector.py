@@ -47,11 +47,11 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from loci.collectors.cms.client import CMSClient
-from loci.collectors.cms.metadata import CMSDatasetVersion, CMSMetadata
-from loci.collectors.cms.spec import CMSDatasetSpec
-from loci.parsers.csv_parser import parse_csv
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.cms.client import CMSClient
+from datadongle.collectors.cms.metadata import CMSDatasetVersion, CMSMetadata
+from datadongle.collectors.cms.spec import CMSDatasetSpec
+from datadongle.parsers.csv_parser import parse_csv
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

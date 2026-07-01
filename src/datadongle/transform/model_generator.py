@@ -35,9 +35,9 @@ from pathlib import Path
 import yaml
 
 # from dbt_model_generator import DbtModelGenerator
-from loci.collectors.census.metadata import CensusMetadata
-from loci.collectors.census.spec import CensusDatasetSpec
-from loci.collectors.census.variable_mapper import CensusVariableMapper
+from datadongle.collectors.census.metadata import CensusMetadata
+from datadongle.collectors.census.spec import CensusDatasetSpec
+from datadongle.collectors.census.variable_mapper import CensusVariableMapper
 
 
 class DbtPipelineBuilder(abc.ABC):

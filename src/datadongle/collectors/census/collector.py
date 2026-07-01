@@ -29,9 +29,9 @@ from __future__ import annotations
 
 import logging
 
-from loci.collectors.census.client import CensusClient
-from loci.collectors.census.spec import GEOGRAPHY_CONFIG, CensusDatasetSpec
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.census.client import CensusClient
+from datadongle.collectors.census.spec import GEOGRAPHY_CONFIG, CensusDatasetSpec
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

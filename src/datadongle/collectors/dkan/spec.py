@@ -3,7 +3,7 @@
 DKANSpec — defines a DKAN dataset (or family of datasets) to collect.
 
 Usage:
-    from loci.collectors.dkan.spec import DKANSpec
+    from datadongle.collectors.dkan.spec import DKANSpec
 
     # Single refresh-in-place dataset (Provider Data Catalog):
     spec = DKANSpec(
@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

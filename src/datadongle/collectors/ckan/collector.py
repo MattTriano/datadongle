@@ -7,13 +7,13 @@ import re
 from pathlib import Path
 from typing import Any
 
-from loci.collectors.ckan.client import CKANClient
-from loci.collectors.ckan.metadata import CKANResource
-from loci.collectors.ckan.spec import CKANDatasetSpec
-from loci.collectors.exceptions import SchemaDriftError
-from loci.parsers.csv_parser import parse_csv
-from loci.parsers.geojson import parse_geojson
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.ckan.client import CKANClient
+from datadongle.collectors.ckan.metadata import CKANResource
+from datadongle.collectors.ckan.spec import CKANDatasetSpec
+from datadongle.collectors.exceptions import SchemaDriftError
+from datadongle.parsers.csv_parser import parse_csv
+from datadongle.parsers.geojson import parse_geojson
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

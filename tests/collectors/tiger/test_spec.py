@@ -3,7 +3,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-from loci.collectors.tiger.spec import (
+from datadongle.collectors.tiger.spec import (
     ALL_STATE_FIPS,
     TigerDatasetSpec,
     _default_entity_key,
@@ -122,7 +122,7 @@ class TestTigerDatasetSpec:
         assert national_spec.states == ALL_STATE_FIPS
 
     @patch(
-        "loci.collectors.tiger.spec.TIGER_LAYER_SCOPE",
+        "datadongle.collectors.tiger.spec.TIGER_LAYER_SCOPE",
         {"PRIMARYROADS": "national", "TRACT": "state"},
     )
     def test_scope_uses_layer_lookup(self):
@@ -131,14 +131,14 @@ class TestTigerDatasetSpec:
         )
         assert spec.scope == "national"
 
-    @patch("loci.collectors.tiger.spec.TIGER_LAYER_SCOPE", {"PRIMARYROADS": "national"})
+    @patch("datadongle.collectors.tiger.spec.TIGER_LAYER_SCOPE", {"PRIMARYROADS": "national"})
     def test_scope_defaults_to_state(self):
         spec = TigerDatasetSpec(
             name="tracts", layer="TRACT", vintages=[2023], target_table="tracts"
         )
         assert spec.scope == "state"
 
-    @patch("loci.collectors.tiger.spec.TIGER_LAYER_SCOPE", {"TRACT": "state"})
+    @patch("datadongle.collectors.tiger.spec.TIGER_LAYER_SCOPE", {"TRACT": "state"})
     def test_scope_is_case_insensitive(self):
         spec = TigerDatasetSpec(
             name="tracts", layer="tract", vintages=[2023], target_table="tracts"
@@ -262,7 +262,7 @@ class TestGenerateTigerDDL:
     def _mock_inspect(self, schema, geom_type="Polygon"):
         """Patch _inspect_sample_schema to return a canned schema."""
         return patch(
-            "loci.collectors.tiger.spec._inspect_sample_schema",
+            "datadongle.collectors.tiger.spec._inspect_sample_schema",
             return_value=(schema, geom_type),
         )
 
@@ -408,7 +408,7 @@ class TestGenerateTigerDDL:
     # -- Synthetic FIPS columns for county-scoped layers --
 
     @patch(
-        "loci.collectors.tiger.spec.TIGER_LAYER_SCOPE",
+        "datadongle.collectors.tiger.spec.TIGER_LAYER_SCOPE",
         {"ADDR": "county"},
     )
     def test_adds_synthetic_fips_when_missing_from_schema(self, addr_fiona_schema):
@@ -424,7 +424,7 @@ class TestGenerateTigerDDL:
         assert '"countyfp" text' in ddl
 
     @patch(
-        "loci.collectors.tiger.spec.TIGER_LAYER_SCOPE",
+        "datadongle.collectors.tiger.spec.TIGER_LAYER_SCOPE",
         {"ROADS": "county"},
     )
     def test_does_not_add_synthetic_fips_when_already_in_schema(self):

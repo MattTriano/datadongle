@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-from loci.collectors.census.collector import CensusCollector, generate_ddl
-from loci.collectors.census.spec import CensusDatasetSpec
+from datadongle.collectors.census.collector import CensusCollector, generate_ddl
+from datadongle.collectors.census.spec import CensusDatasetSpec
 
 # ------------------------------------------------------------------ #
 #  Fixtures

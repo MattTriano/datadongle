@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from loci.collectors.socrata.client import SocrataClient
-from loci.collectors.socrata.collector import SocrataCollector
-from loci.collectors.socrata.metadata import SocrataTableMetadata
+from datadongle.collectors.socrata.client import SocrataClient
+from datadongle.collectors.socrata.collector import SocrataCollector
+from datadongle.collectors.socrata.metadata import SocrataTableMetadata
 
 # ---------------------------------------------------------------------------
 # Helpers

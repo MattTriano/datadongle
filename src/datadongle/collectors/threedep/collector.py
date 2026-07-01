@@ -42,10 +42,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from loci.collectors.threedep.client import ThreeDEPClient, tiles_for_bbox
-from loci.collectors.threedep.spec import THREEDEP_SRID, ThreeDEPDatasetSpec
-from loci.raster.ingest import ingest_raster_file, raster_table_ddl
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.threedep.client import ThreeDEPClient, tiles_for_bbox
+from datadongle.collectors.threedep.spec import THREEDEP_SRID, ThreeDEPDatasetSpec
+from datadongle.raster.ingest import ingest_raster_file, raster_table_ddl
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

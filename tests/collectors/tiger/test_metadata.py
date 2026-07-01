@@ -9,7 +9,7 @@ Requirements: pandas, requests, pytest
 
 import pytest
 import requests
-from loci.collectors.tiger.metadata import TigerMetadata
+from datadongle.collectors.tiger.metadata import TigerMetadata
 
 
 @pytest.fixture(scope="module")

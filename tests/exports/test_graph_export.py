@@ -21,7 +21,7 @@ from decimal import Decimal
 
 import networkx as nx
 import pytest
-from loci.exports.graph_export import (
+from datadongle.exports.graph_export import (
     RoutingGraphExporter,
     _coerce_cost,
     _f,
@@ -29,7 +29,7 @@ from loci.exports.graph_export import (
     build_node_table,
     build_segment_geometries,
 )
-from loci.exports.graph_format import EDGE_FLAG_FORWARD, NULL_STR_IDX
+from datadongle.exports.graph_format import EDGE_FLAG_FORWARD, NULL_STR_IDX
 
 # ----------------------------------------------------------------------
 # Fixtures / builders

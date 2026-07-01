@@ -6,9 +6,9 @@ HTTP: spec validation, tile addressing, and the DDL contract.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.threedep.client import tile_name, tile_url, tiles_for_bbox
-from loci.collectors.threedep.collector import ThreeDEPCollector
-from loci.geo import BBox
+from datadongle.collectors.threedep.client import tile_name, tile_url, tiles_for_bbox
+from datadongle.collectors.threedep.collector import ThreeDEPCollector
+from datadongle.geo import BBox
 
 from ..common import NoopTracker
 from .helpers import FakeThreeDEPClient, FakeThreeDEPSource, make_elevation_spec

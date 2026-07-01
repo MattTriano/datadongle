@@ -7,7 +7,7 @@ parent conftest; shared code (NoopTracker) from ..common.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.cms.collector import CMSCollector
+from datadongle.collectors.cms.collector import CMSCollector
 
 from ..common import NoopTracker
 from .helpers import FakeCMSClient, make_spec

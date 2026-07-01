@@ -21,9 +21,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
-from loci.collectors.threedep.client import SUPPORTED_PRODUCTS
-from loci.geo import BBox
+from datadongle.collectors.base_spec import DatasetSpec
+from datadongle.collectors.threedep.client import SUPPORTED_PRODUCTS
+from datadongle.geo import BBox
 
 # Native SRID / vertical units of the seamless 3DEP products.
 THREEDEP_SRID = 4269  # NAD83 geographic

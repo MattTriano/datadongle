@@ -25,9 +25,9 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from loci.collectors.osm.client import OSMClient
-from loci.collectors.osm.spec import OSMDatasetSpec
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.osm.client import OSMClient
+from datadongle.collectors.osm.spec import OSMDatasetSpec
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

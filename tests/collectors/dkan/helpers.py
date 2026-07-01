@@ -23,7 +23,7 @@ import re
 import tempfile
 from pathlib import Path
 
-from loci.collectors.dkan.spec import DKANDatasetSpec
+from datadongle.collectors.dkan.spec import DKANDatasetSpec
 
 PDC_BASE_URL = "https://fake-pdc.cms.gov"
 HOSPITAL_ID = "xubh-q36u"

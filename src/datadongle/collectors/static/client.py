@@ -24,7 +24,7 @@ from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 import requests
-from loci.collectors.static.spec import FileRef
+from datadongle.collectors.static.spec import FileRef
 
 logger = logging.getLogger(__name__)
 

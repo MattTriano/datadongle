@@ -5,8 +5,8 @@ from unittest.mock import MagicMock
 
 import pytest
 import yaml
-from loci.collectors.census.spec import CensusDatasetSpec
-from loci.transform.model_generator import (
+from datadongle.collectors.census.spec import CensusDatasetSpec
+from datadongle.transform.model_generator import (
     CensusDbtPipelineBuilder,
     DbtModelGenerator,
 )

@@ -25,8 +25,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
-from loci.collectors.osm.query import OverpassAPIQuery
+from datadongle.collectors.base_spec import DatasetSpec
+from datadongle.collectors.osm.query import OverpassAPIQuery
 
 
 @dataclass

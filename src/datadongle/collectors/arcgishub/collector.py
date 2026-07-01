@@ -4,10 +4,10 @@ ArcGISHubCollector — collects data from ArcGIS Hub feature service layers
 and ingests into Postgres via StagedIngest.
 
 Usage:
-    from loci.collectors.arcgis_hub.client import ArcGISHubClient
-    from loci.collectors.arcgis_hub.metadata import ArcGISHubMetadata
-    from loci.collectors.arcgis_hub.spec import ArcGISHubDatasetSpec
-    from loci.collectors.arcgis_hub.collector import ArcGISHubCollector
+    from datadongle.collectors.arcgis_hub.client import ArcGISHubClient
+    from datadongle.collectors.arcgis_hub.metadata import ArcGISHubMetadata
+    from datadongle.collectors.arcgis_hub.spec import ArcGISHubDatasetSpec
+    from datadongle.collectors.arcgis_hub.collector import ArcGISHubCollector
 
     spec = ArcGISHubDatasetSpec(
         name="tps_arrests",
@@ -29,11 +29,11 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from typing import Any
 
-from loci.collectors.arcgishub.client import ArcGISHubClient
-from loci.collectors.arcgishub.metadata import ArcGISHubMetadata
-from loci.collectors.arcgishub.spec import ArcGISHubDatasetSpec
-from loci.collectors.exceptions import SchemaDriftError
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.arcgishub.client import ArcGISHubClient
+from datadongle.collectors.arcgishub.metadata import ArcGISHubMetadata
+from datadongle.collectors.arcgishub.spec import ArcGISHubDatasetSpec
+from datadongle.collectors.exceptions import SchemaDriftError
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

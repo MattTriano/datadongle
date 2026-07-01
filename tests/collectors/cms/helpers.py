@@ -14,7 +14,7 @@ import csv
 import uuid as uuid_module
 from pathlib import Path
 
-from loci.collectors.cms.spec import CMSDatasetSpec
+from datadongle.collectors.cms.spec import CMSDatasetSpec
 
 DATASET_TITLE = "Fake Medicare Payments - by Provider and Service"
 DATA_API_BASE = "https://data.cms.gov/data-api/v1/dataset"

@@ -8,9 +8,9 @@ contract.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.dkan.collector import PG_MAX_IDENTIFIER, DKANCollector
-from loci.collectors.dkan.metadata import DKANMetadata
-from loci.collectors.dkan.spec import DKANDatasetSpec
+from datadongle.collectors.dkan.collector import PG_MAX_IDENTIFIER, DKANCollector
+from datadongle.collectors.dkan.metadata import DKANMetadata
+from datadongle.collectors.dkan.spec import DKANDatasetSpec
 
 from ..common import NoopTracker
 from .helpers import (

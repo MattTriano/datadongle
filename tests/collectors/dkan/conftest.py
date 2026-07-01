@@ -7,7 +7,7 @@ parent conftest; shared code (NoopTracker) from ..common.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.dkan.collector import DKANCollector
+from datadongle.collectors.dkan.collector import DKANCollector
 
 from ..common import NoopTracker
 from .helpers import FakeDKANClient

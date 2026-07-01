@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from loci.collectors.socrata.collector import SocrataCollector
-from loci.tracking.ingestion_tracker import IngestionRun, IngestionTracker
+from datadongle.collectors.socrata.collector import SocrataCollector
+from datadongle.tracking.ingestion_tracker import IngestionRun, IngestionTracker
 
 # ---------------------------------------------------------------------------
 # Fixtures

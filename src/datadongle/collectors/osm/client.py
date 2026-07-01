@@ -25,9 +25,9 @@ from collections.abc import Iterator
 from typing import Any
 
 import requests
-from loci.collectors.osm.geometry import element_to_wkt
-from loci.collectors.osm.query import OverpassAPIQuery
-from loci.collectors.osm.spec import OSMDatasetSpec
+from datadongle.collectors.osm.geometry import element_to_wkt
+from datadongle.collectors.osm.query import OverpassAPIQuery
+from datadongle.collectors.osm.spec import OSMDatasetSpec
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,

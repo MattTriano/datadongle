@@ -1,5 +1,5 @@
 """
-Unit tests for loci.raster.ingest.
+Unit tests for datadongle.raster.ingest.
 
 Tiling and row/DDL building are exercised against a synthetic GeoTIFF
 written to a tmp path. The staged_ingest orchestration is exercised with
@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 import rasterio
-from loci.raster.ingest import (
+from datadongle.raster.ingest import (
     HASH_EXCLUDE_COLUMNS,
     ingest_raster_file,
     iter_tiles,

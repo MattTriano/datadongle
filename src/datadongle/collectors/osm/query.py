@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from loci.geo import BBox
+from datadongle.geo import BBox
 
 VALID_ELEMENT_TYPES = {"node", "way", "relation"}
 VALID_OUT_MODES = {"geom", "center"}

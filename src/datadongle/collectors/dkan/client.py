@@ -15,7 +15,7 @@ Knows three things:
      retry on mid-stream connection failures
 
 Usage:
-    from loci.collectors.dkan.client import DKANClient
+    from datadongle.collectors.dkan.client import DKANClient
 
     client = DKANClient("https://data.cms.gov/provider-data")
     catalog = client.get_catalog()

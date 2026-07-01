@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from loci.collectors.arcgishub.client import ArcGISHubClient
+from datadongle.collectors.arcgishub.client import ArcGISHubClient
 
 
 class ArcGISHubMetadata:

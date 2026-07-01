@@ -18,7 +18,7 @@ import math
 import struct
 
 import pytest
-from loci.exports.graph_format import (
+from datadongle.exports.graph_format import (
     EDGE_FLAG_FORWARD,
     FORMAT_VERSION,
     MAGIC,

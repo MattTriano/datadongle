@@ -56,11 +56,11 @@ import logging
 import re
 from typing import Any
 
-from loci.collectors.dkan.client import DKANClient
-from loci.collectors.dkan.metadata import DKANMetadata
-from loci.collectors.dkan.spec import DKANDatasetSpec
-from loci.parsers.csv_parser import parse_csv
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.dkan.client import DKANClient
+from datadongle.collectors.dkan.metadata import DKANMetadata
+from datadongle.collectors.dkan.spec import DKANDatasetSpec
+from datadongle.parsers.csv_parser import parse_csv
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

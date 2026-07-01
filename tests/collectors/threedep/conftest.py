@@ -7,7 +7,7 @@ parent conftest; shared code (NoopTracker) from ..common.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.threedep.collector import ThreeDEPCollector
+from datadongle.collectors.threedep.collector import ThreeDEPCollector
 
 from ..common import NoopTracker
 from .helpers import SUB_TILE, FakeThreeDEPClient

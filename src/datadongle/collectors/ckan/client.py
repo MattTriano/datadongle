@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from loci.collectors.ckan.metadata import CKANMetadata
+from datadongle.collectors.ckan.metadata import CKANMetadata
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,

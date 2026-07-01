@@ -30,7 +30,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 logger = logging.getLogger(__name__)
 

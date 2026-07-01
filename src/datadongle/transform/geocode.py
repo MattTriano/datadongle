@@ -17,8 +17,8 @@ Usage:
 
 import logging
 
-from loci.db.core import PostgresEngine
-from loci.geo import BBox
+from datadongle.db.core import PostgresEngine
+from datadongle.geo import BBox
 
 logger = logging.getLogger(__name__)
 

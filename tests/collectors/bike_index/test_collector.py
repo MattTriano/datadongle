@@ -4,9 +4,9 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from loci.collectors.bike_index.client import BikeIndexSearchParams
-from loci.collectors.bike_index.collector import BikeIndexCollector
-from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
+from datadongle.collectors.bike_index.client import BikeIndexSearchParams
+from datadongle.collectors.bike_index.collector import BikeIndexCollector
+from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
 from .conftest import make_detail_bike, make_search_bike
 

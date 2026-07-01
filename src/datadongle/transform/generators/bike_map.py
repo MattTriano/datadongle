@@ -25,7 +25,7 @@ import abc
 from pathlib import Path
 
 import yaml
-from loci.transform.model_generator import IndentedDumper
+from datadongle.transform.model_generator import IndentedDumper
 
 
 class CityPipelineBuilder(abc.ABC):

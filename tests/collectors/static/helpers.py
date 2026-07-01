@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import io
 
-from loci.collectors.static.client import StaticFileClient, StaticFileDownloadError
-from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
+from datadongle.collectors.static.client import StaticFileClient, StaticFileDownloadError
+from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
 
 
 class FakeStaticFileClient(StaticFileClient):

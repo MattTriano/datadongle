@@ -7,9 +7,9 @@ spec validation, catalog version parsing, and the DDL contract.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.cms.collector import CMSCollector
-from loci.collectors.cms.metadata import CMSMetadata, vintage_from_temporal
-from loci.collectors.cms.spec import CMSDatasetSpec
+from datadongle.collectors.cms.collector import CMSCollector
+from datadongle.collectors.cms.metadata import CMSMetadata, vintage_from_temporal
+from datadongle.collectors.cms.spec import CMSDatasetSpec
 
 from ..common import NoopTracker
 from .helpers import DATASET_TITLE, FakeCMSClient, FakeCMSSource, make_rows, make_spec

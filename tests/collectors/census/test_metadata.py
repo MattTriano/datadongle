@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from loci.collectors.census.metadata import CensusMetadata
+from datadongle.collectors.census.metadata import CensusMetadata
 
 
 @pytest.fixture

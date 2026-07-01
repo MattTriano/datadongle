@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from loci.exports.geojson_export import GeoJSONExportConfig
+from datadongle.exports.geojson_export import GeoJSONExportConfig
 
 # Allowed formatter names. The frontend has matching JS implementations.
 # Keep this list small and explicit so the frontend doesn't have to

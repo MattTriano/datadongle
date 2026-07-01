@@ -12,7 +12,7 @@ DataFrame-returning methods for browsing each, plus full-text and
 tag-based search for finding series directly.
 
 Usage:
-    from loci.collectors.fred.metadata import FredMetadata
+    from datadongle.collectors.fred.metadata import FredMetadata
 
     m = FredMetadata(api_key="YOUR_KEY")  # or set FRED_API_KEY env var
 

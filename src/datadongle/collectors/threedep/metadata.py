@@ -19,12 +19,12 @@ from __future__ import annotations
 
 import logging
 
-from loci.collectors.threedep.client import (
+from datadongle.collectors.threedep.client import (
     SUPPORTED_PRODUCTS,
     ThreeDEPClient,
     tiles_for_bbox,
 )
-from loci.geo import BBox
+from datadongle.geo import BBox
 
 logger = logging.getLogger(__name__)
 
