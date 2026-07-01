@@ -27,6 +27,9 @@ class SourceReader(Protocol):
 
     source: str
 
+    def dataset_id(self, spec: Any) -> str:
+        """A stable identifier for ``spec`` within this source (for run logging)."""
+
     def target(self, spec: Any) -> TableRef:
         """The destination table for ``spec``."""
 
