@@ -89,22 +89,32 @@ Mirrors the layout in the spec doc. Concrete pieces:
 5. `engines/iceberg.py` + `engines/_duckdb.py`; hermetic Iceberg tests + two-engine conformance + geometry round-trip. **Commit.**
 6. Re-point `loci/collectors/socrata/taskflow.py` to `datadongle`; apply the HWM-from-table correction to the spec doc; final checks. **Commit.**
 
-## Resume notes — end of session 2026-07-01
+## Resume notes — updated end of session 2 (2026-07-01)
 
-**Done so far:**
-- Baseline commit on `main` (`5785fa9`), branch **`feat/datadongle-socrata`** checked out.
-- Design doc committed at `docs/issues/datadongle-collector-refactor-and-iceberg-engine.md`; this plan committed at `docs/planning/datadongle-socrata-plan.md` (`020d054`).
-- Host-side `uv init` left artifacts at repo root: `pyproject.toml` (`name = "datadongle"`, `requires-python = ">=3.13"`), `main.py`, `README.md`, `.python-version` → `3.13`. These still need adjusting (below).
+**Branch:** `feat/datadongle-socrata`, 3 commits ahead of `main` / `origin/main` (both at `10ceaaf`). Resume with `claude --continue` from `/workspace`, or read `docs/issues/…` + this file and continue from "Next steps" below.
 
-**Environment blockers to clear before resuming implementation:**
-- `uv` binary is **not installed inside this container** (only host-side); add it to the Dockerfile for this Claude Code env.
-- Container Python is **3.11.2**; `pyproject` pins `>=3.13`. Either add a 3.13 interpreter (uv can fetch one) or set `requires-python = ">=3.11"`. Decide when resuming.
+**Repo structure now (settled):**
+- Repo root IS the `datadongle` uv project. Source in **`src/datadongle/`** (hatchling, src layout); tests in repo-root **`tests/`**; `loci/` is gone. `pyproject.toml` sets `requires-python = ">=3.13"`, extras `[postgres]`/`[geo]`/`[iceberg]`, dev group; `uv.lock` committed.
+- Airflow decision (resolves the earlier open question): **no Airflow in `datadongle`.** The only Airflow-coupled files (`collectors/socrata/taskflow.py`, `db/af_utils.py`) and the obsolete `tests/tasks` suite were deleted. Airflow glue will live outside the package later.
 
-**Layout decision (updates the earlier "Where things live" section):**
-- The repo root IS the `datadongle` project. Create **`src/datadongle/`** and migrate the existing `loci/` code into it so **`loci/` no longer exists**. Relocate `tests/` sensibly (e.g. repo-root `tests/` mapping onto the new `src/datadongle/` modules). Remove the `uv init` stub `main.py`.
-- **OPEN QUESTION to confirm first thing on resume:** does the *entire* `loci/` package move into `datadongle` (including the Airflow-coupled `*/taskflow.py` and `sources/update_configs.py`), or only the collector tooling + engines + shared load layer, with the Airflow glue extracted to a separate location? This must be reconciled with the hard rule that **`datadongle` imports no Airflow**. Likely answer: taskflows/DAGs live in a separate top-level (e.g. `airflow/` or a `datadongle-airflow` extra) that depends on `datadongle`; confirm with the user.
+**Done and verified on Python 3.11 (dependency-free layers):**
+- `6cfe334` — uv scaffold; `loci.*`→`datadongle.*` across all files; core primitives: `core/cursor.py` (`Cursor`/`CursorSpec`), `core/schema.py` (`TableSchema`/`Column`/`ColumnType`/`GeometrySpec`), `core/write_mode.py` (`Append`/`Upsert`/`Scd2`). Tests in `tests/core/`.
+- `59b5f5d` — `core/engine.py` (`TableRef`, `WriteSession`, `Engine` protocols) + `core/reader.py` (`SourceReader`, incl. `dataset_id`). Both runtime_checkable.
+- `2c19f2b` — `load/driver.py` `run_collection` (full/incremental + HWM read from the target table). Tests in `tests/load/test_driver.py` (in-memory fakes, 6 pass).
 
-**How to resume:** from `/workspace`, run `claude --continue` (resumes this session if `/root/.claude` persisted) or `claude --resume` to pick it. If history was lost in the rebuild, point a fresh session at `docs/issues/…` + `docs/planning/…` and say "continue implementing the datadongle plan." Next actionable step is **step 2 (uv scaffold + core primitives)** below.
+**ENVIRONMENT BLOCKER (must clear before continuing):**
+- `uv` is installed in-container (`/usr/bin/uv`), but `requires-python >=3.13` and the container only has **CPython 3.11.2**. The `.venv` was built on the host (`/home/matt/.local/share/uv/...`), so its interpreter is not usable in-container, and there is **no GitHub egress** to download 3.13.
+- **To unblock:** whitelist `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`, then run `uv sync --all-extras` in-container (installs CPython 3.13 + all deps). Alternative: run `uv run pytest` on the host and feed results back.
+
+**FIRST thing after unblocking:** `uv run pytest` on the full suite. The `loci`→`datadongle` rename in the *existing* tests (`tests/collectors`, `tests/db`, `tests/parsers`, etc.) compiles but has **not** been run — fix any import/rename fallout so the pre-existing suite is green. Note: `tests/collectors` Postgres tests skip without `DWH_TEST_PG*`; the Iceberg path is designed hermetic.
+
+**Next steps (unchanged plan, engine layers still to build — all need the 3.13 env):**
+1. `engines/postgres.py`: `PostgresEngine` implementing the `Engine` protocol by wrapping the existing `StagedIngest` in `src/datadongle/db/core.py`; add `read_high_water_mark` (lift `SocrataCollector._get_hwm_from_table`), `ensure_table`, `table_columns`, `geometry_columns`. Port `tests/db/test_core.py`.
+2. `collectors/socrata/reader.py`: `SocrataReader` (reuse existing `spec.py`/`client.py`/`metadata.py`); delete the mode-dispatch logic in `collector.py`. Socrata-on-Postgres tests via the driver.
+3. `engines/iceberg.py` + `engines/_duckdb.py`: Shape-B `IcebergEngine` (PyIceberg append + DuckDB detect/query, WKB geometry, SQLite catalog). Hermetic Iceberg tests + two-engine conformance + geometry round-trip.
+4. Fix the spec doc's HWM section (it still says HWM moves to the tracker; corrected design reads HWM from the table).
+
+**Conventions:** use `git mv` for moves; commit at green checkpoints with the `Co-Authored-By: Claude Opus 4.8 (1M context)` trailer; do not push (user pushes).
 
 ## Out of scope (this slice)
 
