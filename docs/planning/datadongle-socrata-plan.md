@@ -89,6 +89,23 @@ Mirrors the layout in the spec doc. Concrete pieces:
 5. `engines/iceberg.py` + `engines/_duckdb.py`; hermetic Iceberg tests + two-engine conformance + geometry round-trip. **Commit.**
 6. Re-point `loci/collectors/socrata/taskflow.py` to `datadongle`; apply the HWM-from-table correction to the spec doc; final checks. **Commit.**
 
+## Resume notes — end of session 2026-07-01
+
+**Done so far:**
+- Baseline commit on `main` (`5785fa9`), branch **`feat/datadongle-socrata`** checked out.
+- Design doc committed at `docs/issues/datadongle-collector-refactor-and-iceberg-engine.md`; this plan committed at `docs/planning/datadongle-socrata-plan.md` (`020d054`).
+- Host-side `uv init` left artifacts at repo root: `pyproject.toml` (`name = "datadongle"`, `requires-python = ">=3.13"`), `main.py`, `README.md`, `.python-version` → `3.13`. These still need adjusting (below).
+
+**Environment blockers to clear before resuming implementation:**
+- `uv` binary is **not installed inside this container** (only host-side); add it to the Dockerfile for this Claude Code env.
+- Container Python is **3.11.2**; `pyproject` pins `>=3.13`. Either add a 3.13 interpreter (uv can fetch one) or set `requires-python = ">=3.11"`. Decide when resuming.
+
+**Layout decision (updates the earlier "Where things live" section):**
+- The repo root IS the `datadongle` project. Create **`src/datadongle/`** and migrate the existing `loci/` code into it so **`loci/` no longer exists**. Relocate `tests/` sensibly (e.g. repo-root `tests/` mapping onto the new `src/datadongle/` modules). Remove the `uv init` stub `main.py`.
+- **OPEN QUESTION to confirm first thing on resume:** does the *entire* `loci/` package move into `datadongle` (including the Airflow-coupled `*/taskflow.py` and `sources/update_configs.py`), or only the collector tooling + engines + shared load layer, with the Airflow glue extracted to a separate location? This must be reconciled with the hard rule that **`datadongle` imports no Airflow**. Likely answer: taskflows/DAGs live in a separate top-level (e.g. `airflow/` or a `datadongle-airflow` extra) that depends on `datadongle`; confirm with the user.
+
+**How to resume:** from `/workspace`, run `claude --continue` (resumes this session if `/root/.claude` persisted) or `claude --resume` to pick it. If history was lost in the rebuild, point a fresh session at `docs/issues/…` + `docs/planning/…` and say "continue implementing the datadongle plan." Next actionable step is **step 2 (uv scaffold + core primitives)** below.
+
 ## Out of scope (this slice)
 
 Other ~12 collectors; Trino/Spark; remote object stores; removing the now-duplicated `loci/db/core.py` and `loci/collectors/socrata/*` (a follow-up once all collectors migrate); `invalidate_missing` Shape-B analogue; raster on Iceberg.
