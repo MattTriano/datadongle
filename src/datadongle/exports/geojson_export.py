@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from datadongle.db.core import PostgresEngine
+from datadongle.engines.postgres import PostgresEngine
 
 logger = logging.getLogger(__name__)
 

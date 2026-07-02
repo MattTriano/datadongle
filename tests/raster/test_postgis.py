@@ -121,7 +121,7 @@ def _sample(engine, x, y):
 
 @pytest.fixture
 def engine():
-    from datadongle.db.core import PostgresEngine  # platform import
+    from datadongle.engines.postgres import PostgresEngine  # platform import
 
     eng = PostgresEngine(creds=_env_creds())
     # eng.execute("create extension if not exists postgis;")

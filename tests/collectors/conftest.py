@@ -30,7 +30,7 @@ import pytest
 @pytest.fixture(scope="session")
 def engine():
     try:
-        from datadongle.db.core import PostgresEngine
+        from datadongle.engines.postgres import PostgresEngine
     except ImportError as e:
         pytest.skip(f"Could not import PostgresEngine — fix the import in conftest.py ({e})")
 

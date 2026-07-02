@@ -33,7 +33,7 @@ from typing import Any
 
 from datadongle.collectors.static.client import StaticFileClient
 from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
-from datadongle.db.core import PostgresEngine
+from datadongle.engines.postgres import PostgresEngine
 from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
