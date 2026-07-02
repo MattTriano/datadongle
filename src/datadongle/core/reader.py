@@ -37,7 +37,7 @@ class SourceReader(Protocol):
         """The engine-neutral schema of the target table."""
 
     def write_mode(self, spec: Any) -> WriteMode:
-        """The load policy (Append / Upsert / Scd2) for ``spec``."""
+        """The load policy (Append / Upsert / SCD2) for ``spec``."""
 
     def cursor_spec(self, spec: Any) -> CursorSpec | None:
         """Incremental cursor columns, or ``None`` if not incrementally queryable."""

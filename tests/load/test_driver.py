@@ -9,10 +9,12 @@ from __future__ import annotations
 import contextlib
 from types import SimpleNamespace
 
+import pytest
+
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
 from datadongle.core.schema import Column, ColumnType, TableSchema
-from datadongle.core.write_mode import Scd2
+from datadongle.core.write_mode import SCD2
 from datadongle.load.driver import run_collection
 
 
@@ -45,8 +47,9 @@ class FakeEngine:
         self.session = FakeWriteSession()
         self.open_write_args = None
 
-    def ensure_table(self, target, schema):
+    def ensure_table(self, target, schema, mode):
         self.ensured.append(target)
+        self.ensure_mode = mode
 
     def read_high_water_mark(self, target, cursor):
         self.hwm_reads.append((target, cursor))
@@ -78,10 +81,10 @@ class FakeReader:
         return TableRef(spec["table"], spec["schema"])
 
     def schema(self, spec):
-        return TableSchema(columns=[Column("id", ColumnType.TEXT)], entity_key=["id"])
+        return TableSchema(columns=[Column("id", ColumnType.TEXT)])
 
     def write_mode(self, spec):
-        return Scd2(entity_key=["id"])
+        return SCD2(entity_key=["id"])
 
     def cursor_spec(self, spec):
         return self._cursor_spec
@@ -177,5 +180,31 @@ def test_open_write_receives_the_readers_write_mode():
     reader = FakeReader(PAGES)
     run_collection(reader, SPEC, engine, mode="full")
     target, schema, mode = engine.open_write_args
-    assert isinstance(mode, Scd2)
+    assert isinstance(mode, SCD2)
     assert mode.entity_key == ["id"]
+
+
+def test_ensure_table_receives_the_write_mode():
+    engine = FakeEngine()
+    reader = FakeReader(PAGES)
+    run_collection(reader, SPEC, engine, mode="full")
+    assert isinstance(engine.ensure_mode, SCD2)
+
+
+class _InvalidateMissingReader(FakeReader):
+    def write_mode(self, spec):
+        return SCD2(entity_key=["id"], invalidate_missing=True)
+
+
+def test_incremental_with_invalidate_missing_is_rejected():
+    engine = FakeEngine(hwm=Cursor("2023-12-31", "0"))
+    reader = _InvalidateMissingReader(PAGES)
+    with pytest.raises(ValueError, match="invalidate_missing"):
+        run_collection(reader, SPEC, engine, mode="incremental")
+
+
+def test_full_with_invalidate_missing_is_allowed():
+    engine = FakeEngine()
+    reader = _InvalidateMissingReader(PAGES)
+    summary = run_collection(reader, SPEC, engine, mode="full")
+    assert summary["rows_merged"] == 3

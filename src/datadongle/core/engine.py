@@ -70,8 +70,17 @@ class Engine(Protocol):
     def query(self, sql: str, params: Any | None = None) -> Any:
         """Run a read query; returns a DataFrame/GeoDataFrame (engine-specific)."""
 
-    def ensure_table(self, target: TableRef, schema: TableSchema) -> None:
-        """Idempotently create ``target`` with ``schema`` if it does not exist."""
+    def ensure_table(
+        self, target: TableRef, schema: TableSchema, mode: WriteMode
+    ) -> None:
+        """Idempotently create ``target`` for ``schema`` under ``mode``.
+
+        The physical shape depends on ``mode``: every table gets an
+        ``ingested_at`` column; a keyed :class:`SCD2` table also gets the
+        engine's SCD2 columns (e.g. ``record_hash``/``valid_from``/``valid_to``
+        for Postgres) plus the matching uniqueness constraint and
+        current-version index.
+        """
 
     def table_exists(self, target: TableRef) -> bool: ...
 

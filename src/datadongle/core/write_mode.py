@@ -41,7 +41,7 @@ class Upsert(WriteMode):
 
 
 @dataclass(frozen=True)
-class Scd2(WriteMode):
+class SCD2(WriteMode):
     """Keep versioned history keyed by ``entity_key`` + a content hash.
 
     Each engine realizes this in its native shape: physical
@@ -57,4 +57,4 @@ class Scd2(WriteMode):
 
     def __post_init__(self) -> None:
         if not self.entity_key:
-            raise ValueError("Scd2 requires at least one entity_key column.")
+            raise ValueError("SCD2 requires at least one entity_key column.")

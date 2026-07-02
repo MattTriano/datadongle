@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from datadongle.core.write_mode import Append, Scd2, Upsert, WriteMode
+from datadongle.core.write_mode import Append, SCD2, Upsert, WriteMode
 
 
 def test_append_is_a_write_mode():
@@ -27,10 +27,10 @@ def test_upsert_defaults_to_update():
 
 def test_scd2_requires_entity_key():
     with pytest.raises(ValueError):
-        Scd2(entity_key=[])
+        SCD2(entity_key=[])
 
 
 def test_scd2_defaults():
-    m = Scd2(entity_key=["case_number"])
+    m = SCD2(entity_key=["case_number"])
     assert m.entity_key == ["case_number"]
     assert m.invalidate_missing is False

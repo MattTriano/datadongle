@@ -46,12 +46,20 @@ class GeometrySpec:
 
 @dataclass(frozen=True)
 class Column:
-    """A single typed column. ``geometry`` is set iff ``type`` is GEOMETRY."""
+    """A single typed column.
+
+    ``geometry`` is set iff ``type`` is GEOMETRY. ``metadata`` marks a
+    source-provided bookkeeping column (a row id, source timestamps, a version
+    counter) that is stored but excluded from the SCD2 content hash — so a
+    re-pull that only bumps such a column does not create a spurious new record
+    version.
+    """
 
     name: str
     type: ColumnType
     nullable: bool = True
     geometry: GeometrySpec | None = None
+    metadata: bool = False
 
     def __post_init__(self) -> None:
         if self.type is ColumnType.GEOMETRY and self.geometry is None:
@@ -64,14 +72,15 @@ class Column:
 
 @dataclass
 class TableSchema:
-    """A target table's columns plus its natural key.
+    """A target table's columns and their types — structure only.
 
-    ``entity_key`` is the natural key used for SCD2/upsert. ``None`` means
-    append-only.
+    The natural key (``entity_key``) lives on the :class:`WriteMode` the engine
+    consumes, not here, and the SCD2/pipeline columns
+    (``record_hash``/``valid_from``/``valid_to``/``ingested_at``) are added by
+    the engine at ``ensure_table`` time, not declared by the source.
     """
 
     columns: list[Column]
-    entity_key: list[str] | None = None
 
     @property
     def geometry(self) -> dict[str, GeometrySpec]:
@@ -84,3 +93,7 @@ class TableSchema:
 
     def column_names(self) -> list[str]:
         return [c.name for c in self.columns]
+
+    def metadata_column_names(self) -> set[str]:
+        """Names of source-metadata columns (excluded from the SCD2 hash)."""
+        return {c.name for c in self.columns if c.metadata}

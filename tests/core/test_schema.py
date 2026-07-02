@@ -37,14 +37,26 @@ def test_table_schema_geometry_property():
                 geometry=GeometrySpec(kind="Point", srid=4326),
             ),
         ],
-        entity_key=["id"],
     )
     assert schema.column_names() == ["id", "geom"]
     assert set(schema.geometry) == {"geom"}
     assert schema.geometry["geom"].kind == "Point"
 
 
-def test_table_schema_defaults_to_append_only():
+def test_table_schema_without_geometry():
     schema = TableSchema(columns=[Column(name="id", type=ColumnType.TEXT)])
-    assert schema.entity_key is None
     assert schema.geometry == {}
+
+
+def test_metadata_column_names():
+    schema = TableSchema(
+        columns=[
+            Column(name="id", type=ColumnType.TEXT),
+            Column(name="value", type=ColumnType.INTEGER),
+            Column(name="socrata_id", type=ColumnType.TEXT, metadata=True),
+            Column(name="socrata_version", type=ColumnType.TEXT, metadata=True),
+        ]
+    )
+    assert schema.metadata_column_names() == {"socrata_id", "socrata_version"}
+    # a plain column is not metadata by default
+    assert schema.columns[0].metadata is False

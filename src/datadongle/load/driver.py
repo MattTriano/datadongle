@@ -16,6 +16,7 @@ from typing import Any, Literal
 from datadongle.core.cursor import Cursor
 from datadongle.core.engine import Engine
 from datadongle.core.reader import SourceReader
+from datadongle.core.write_mode import SCD2
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,19 @@ def run_collection(
     """
     target = reader.target(spec)
     schema = reader.schema(spec)
-    engine.ensure_table(target, schema)
+    write_mode = reader.write_mode(spec)
+
+    if (
+        mode == "incremental"
+        and isinstance(write_mode, SCD2)
+        and write_mode.invalidate_missing
+    ):
+        raise ValueError(
+            "SCD2(invalidate_missing=True) requires a full read: an incremental "
+            "pull cannot observe which entities are absent. Use mode='full'."
+        )
+
+    engine.ensure_table(target, schema, write_mode)
 
     since: Cursor | None = None
     if mode == "incremental":
@@ -57,8 +70,6 @@ def run_collection(
         else:
             since = engine.read_high_water_mark(target, cursor_spec)
             logger.info("Resuming %s from high-water mark %s", target, since)
-
-    write_mode = reader.write_mode(spec)
 
     if tracker is not None:
         run_ctx = tracker.track(reader.source, reader.dataset_id(spec), str(target))
