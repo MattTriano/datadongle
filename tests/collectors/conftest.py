@@ -36,7 +36,7 @@ def engine():
 
     creds = SimpleNamespace(
         host=os.environ.get("DWH_TEST_PGHOST", "localhost"),
-        port=int(os.environ.get("DWH_TEST_PGPORT")),
+        port=int(os.environ.get("DWH_TEST_PGPORT", "5432")),
         database=os.environ.get("DWH_TEST_PGDATABASE"),
         username=os.environ.get("DWH_TEST_PGUSER"),
         password=os.environ.get("DWH_TEST_PGPASSWORD"),

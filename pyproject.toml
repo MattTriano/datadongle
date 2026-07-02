@@ -10,6 +10,7 @@ dependencies = [
     "requests",
     "tenacity",
     "pyyaml",
+    "ijson>=3.5.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,8 @@ iceberg = [
 [dependency-groups]
 dev = [
     "pytest",
+    "ruff>=0.15.20",
+    "ty>=0.0.56",
 ]
 
 [build-system]
@@ -47,3 +50,8 @@ packages = ["src/datadongle"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = '-m "not network"'
+markers = [
+    "network:  test requires network egress (deselected by default, run with -m network)"
+]
