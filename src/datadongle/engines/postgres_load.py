@@ -13,7 +13,9 @@ engine's connection/query primitives in ``engines.postgres``.
 from __future__ import annotations
 
 import io
+import logging
 import uuid
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -159,10 +161,7 @@ class StagedIngest:
         try:
             if self.rows_staged > 0:
                 self._cast_geometry_if_needed()
-                if self._entity_key:
-                    self._scd2_merge()
-                else:
-                    self._merge()
+                self._run_merge()
                 if exc_type is not None:
                     self._engine.logger.warning(
                         "StagedIngest: merged %d rows from %s despite error: %s",
@@ -183,174 +182,52 @@ class StagedIngest:
         return False
 
     # ------------------------------------------------------------------
-    # Simple merge
+    # Merge dispatch
     # ------------------------------------------------------------------
 
-    def _merge(self) -> None:
-        """INSERT from staging into target, with optional ON CONFLICT."""
-        insert_sql = (
-            f"insert into {self._fqn} ({self._col_list}) "
-            f"select {self._col_list} from {self._staging_table}"
-        )
+    def _run_merge(self) -> None:
+        """Integrate staging into the target using the configured write mode.
 
-        if self._conflict_columns:
-            conflict_clause = ", ".join(f'"{c}"' for c in self._conflict_columns)
-
-            if self._conflict_action.upper() == "UPDATE":
-                update_cols = [c for c in self._columns if c not in self._conflict_columns]
-                set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
-                insert_sql += f" on conflict ({conflict_clause}) do update set {set_clause}"
-            else:
-                insert_sql += f" on conflict ({conflict_clause}) do nothing"
-
-        with self._engine.cursor() as cur:
-            cur.execute(insert_sql)
-            self.rows_merged = cur.rowcount
-
-        self._engine.logger.info(
-            "Merged %d rows into %s (staged %d)",
-            self.rows_merged,
-            self._fqn,
-            self.rows_staged,
-        )
-
-    # ------------------------------------------------------------------
-    # SCD2 merge
-    # ------------------------------------------------------------------
-
-    def _scd2_merge(self) -> None:
+        Picks one of the module-level merge routines by how the stager was
+        configured: ``entity_key`` -> SCD2, ``conflict_column`` -> upsert,
+        otherwise a plain append. The whole merge runs in a single
+        transaction so it is atomic.
         """
-        SCD Type 2 merge. Order matters:
-
-        1. Compute record_hash on staging rows.
-        2. If invalidate_missing is True, invalidate current target rows
-           whose entity_key is absent from staging. This step must run
-           BEFORE the dedupe in step 3, because dedupe removes rows from
-           staging that would otherwise prove an entity is still present.
-        3. Drop staging rows whose (entity_key, record_hash) already
-           exists anywhere in target history. These are not new versions
-           — they're either duplicates of the current row or replays of
-           a previously-seen historical version. Keeping them would
-           cause the close-out in step 4 to invalidate the current row
-           without a replacement landing, since the insert in step 5
-           would no-op on the unique constraint.
-        4. Close out current versions in target whose hash differs from
-           staging (entity exists in both, but content changed).
-        5. Insert new versions (new entities + changed entities).
-        """
-        hash_columns = self._get_hash_columns()
-        hash_expr = self._build_hash_expression(hash_columns)
-        entity_join = " and ".join(f't."{k}" = s."{k}"' for k in self._entity_key)
-        entity_conflict = ", ".join(f'"{k}"' for k in self._entity_key)
-
         with self._engine.cursor() as cur:
-            # 1. Compute record_hash on staging rows
-            cur.execute(
-                f'alter table {self._staging_table} add column if not exists "record_hash" text'
-            )
-            cur.execute(f'update {self._staging_table} set "record_hash" = {hash_expr}')
-
-            # 2. Invalidate current target rows whose entity_key is absent
-            #    from staging. Must run before dedupe so staging still
-            #    contains evidence that unchanged entities are present.
-            if self._invalidate_missing:
-                cur.execute(f"""
-                    update {self._fqn} t
-                    set "valid_to" = now() at time zone 'utc'
-                    where "valid_to" is null
-                      and not exists (
-                        select 1 from {self._staging_table} s
-                        where {entity_join}
-                      )
-                """)
-                self.rows_invalidated = cur.rowcount
-                self._engine.logger.info(
-                    "SCD2: invalidated %d removed entities in %s",
-                    self.rows_invalidated,
-                    self._fqn,
+            if self._entity_key:
+                result = scd2_merge(
+                    cur,
+                    fqn=self._fqn,
+                    staging_table=self._staging_table,
+                    columns=self._columns,
+                    col_list=self._col_list,
+                    entity_key=self._entity_key,
+                    hash_exclude=self._hash_exclude_columns,
+                    invalidate_missing=self._invalidate_missing,
+                    rows_staged=self.rows_staged,
+                    logger=self._engine.logger,
                 )
-
-            # 3. Dedupe staging against target history. Any (entity_key,
-            #    record_hash) that already exists in target — current or
-            #    closed — is not a new version and should not drive the
-            #    close-out below.
-            cur.execute(f"""
-                delete from {self._staging_table} s
-                using {self._fqn} t
-                where {entity_join}
-                  and t."record_hash" = s."record_hash"
-            """)
-            rows_deduped = cur.rowcount
-            self._engine.logger.info(
-                "SCD2: dropped %d staging rows whose (entity_key, record_hash) "
-                "already exists in %s",
-                rows_deduped,
-                self._fqn,
-            )
-
-            # 4. Close out current versions that have a new incoming version
-            #    (entity exists in both, but hash differs)
-            cur.execute(f"""
-                update {self._fqn} t
-                set "valid_to" = now() at time zone 'utc'
-                where "valid_to" is null
-                  and exists (
-                    select 1 from {self._staging_table} s
-                    where {entity_join}
-                      and s."record_hash" != t."record_hash"
-                  )
-            """)
-            rows_closed = cur.rowcount
-            self._engine.logger.info(
-                "SCD2: closed out %d superseded versions in %s",
-                rows_closed,
-                self._fqn,
-            )
-
-            # 5. Insert new versions. The on conflict clause is
-            #    belt-and-suspenders — step 3 already removed any staging
-            #    rows that would conflict — but it's cheap and guards
-            #    against any future code path that might bypass dedupe.
-            select_cols = ", ".join(f's."{c}"' for c in self._columns)
-            insert_col_list = f'{self._col_list}, "record_hash"'
-
-            cur.execute(f"""
-                insert into {self._fqn} ({insert_col_list})
-                select {select_cols}, s."record_hash"
-                from {self._staging_table} s
-                on conflict ({entity_conflict}, "record_hash") do nothing
-            """)
-            self.rows_merged = cur.rowcount
-
-        self._engine.logger.info(
-            "SCD2: inserted %d new versions into %s "
-            "(staged %d, deduped %d, invalidated %d, closed %d)",
-            self.rows_merged,
-            self._fqn,
-            self.rows_staged,
-            rows_deduped,
-            self.rows_invalidated,
-            rows_closed,
-        )
-
-    def _get_hash_columns(self) -> list[str]:
-        """Determine which columns to include in the record hash."""
-        exclude = set(self._entity_key) | set(self._hash_exclude_columns or set())
-        hash_cols = [c for c in self._columns if c not in exclude]
-        if not hash_cols:
-            raise ValueError(
-                f"No columns to hash after excluding entity_key {self._entity_key} "
-                f"and metadata columns {self._metadata_columns}"
-            )
-        self._engine.logger.info("SCD2: hashing columns: %s", hash_cols)
-        return hash_cols
-
-    @staticmethod
-    def _build_hash_expression(columns: list[str]) -> str:
-        """Build a SQL MD5 expression over the given columns."""
-        parts = [f"""coalesce("{c}"::text, '')""" for c in columns]
-        concatenated = " || '|' || ".join(parts)
-        return f"md5({concatenated})"
+                self.rows_merged = result.rows_merged
+                self.rows_invalidated = result.rows_invalidated
+            elif self._conflict_columns:
+                self.rows_merged = upsert_merge(
+                    cur,
+                    fqn=self._fqn,
+                    col_list=self._col_list,
+                    columns=self._columns,
+                    staging_table=self._staging_table,
+                    conflict_columns=self._conflict_columns,
+                    conflict_action=self._conflict_action,
+                    logger=self._engine.logger,
+                )
+            else:
+                self.rows_merged = append_merge(
+                    cur,
+                    fqn=self._fqn,
+                    col_list=self._col_list,
+                    staging_table=self._staging_table,
+                    logger=self._engine.logger,
+                )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -430,3 +307,231 @@ class StagedIngest:
                 f'alter column "{geom_col}" type geometry '
                 f'using "{geom_col}"::geometry'
             )
+
+
+# ----------------------------------------------------------------------
+# Per-mode merge routines
+#
+# Each takes an open cursor and the resolved table/column names, runs the
+# integration SQL for one write mode, and returns what it changed. They are
+# module-level (not methods) so the SQL for each mode reads top-to-bottom in
+# one place; ``StagedIngest._run_merge`` selects between them.
+# ----------------------------------------------------------------------
+
+
+@dataclass
+class Scd2Result:
+    """What an :func:`scd2_merge` call changed in the target table."""
+
+    rows_merged: int = 0
+    rows_invalidated: int = 0
+
+
+def append_merge(
+    cur,
+    *,
+    fqn: str,
+    col_list: str,
+    staging_table: str,
+    logger: logging.Logger,
+) -> int:
+    """``Append``: INSERT every staged row into the target.
+
+    No key, no conflict handling — the target accumulates every row it is
+    given, duplicates included. Returns the number of rows inserted.
+    """
+    cur.execute(
+        f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}"
+    )
+    rows_merged = cur.rowcount
+    logger.info("Merged %d rows into %s", rows_merged, fqn)
+    return rows_merged
+
+
+def upsert_merge(
+    cur,
+    *,
+    fqn: str,
+    col_list: str,
+    columns: list[str],
+    staging_table: str,
+    conflict_columns: list[str],
+    conflict_action: str,
+    logger: logging.Logger,
+) -> int:
+    """``Upsert``: INSERT ... ON CONFLICT into the target.
+
+    ``conflict_action`` is ``"NOTHING"`` (keep the existing row, ignore the
+    incoming duplicate) or ``"UPDATE"`` (overwrite the conflicting row's
+    non-key columns from the incoming row). Returns the number of rows
+    inserted or updated.
+    """
+    insert_sql = (
+        f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}"
+    )
+    conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
+    if conflict_action.upper() == "UPDATE":
+        update_cols = [c for c in columns if c not in conflict_columns]
+        set_clause = ", ".join(f'"{c}" = excluded."{c}"' for c in update_cols)
+        insert_sql += f" on conflict ({conflict_clause}) do update set {set_clause}"
+    else:
+        insert_sql += f" on conflict ({conflict_clause}) do nothing"
+
+    cur.execute(insert_sql)
+    rows_merged = cur.rowcount
+    logger.info("Upserted %d rows into %s", rows_merged, fqn)
+    return rows_merged
+
+
+def scd2_merge(
+    cur,
+    *,
+    fqn: str,
+    staging_table: str,
+    columns: list[str],
+    col_list: str,
+    entity_key: list[str],
+    hash_exclude: set[str] | None,
+    invalidate_missing: bool,
+    rows_staged: int,
+    logger: logging.Logger,
+) -> Scd2Result:
+    """``SCD2``: append a new version only when an entity's content changes.
+
+    Order matters:
+
+    1. Compute record_hash on staging rows.
+    2. If invalidate_missing is True, invalidate current target rows
+       whose entity_key is absent from staging. This step must run
+       BEFORE the dedupe in step 3, because dedupe removes rows from
+       staging that would otherwise prove an entity is still present.
+    3. Drop staging rows whose (entity_key, record_hash) already
+       exists anywhere in target history. These are not new versions
+       — they're either duplicates of the current row or replays of
+       a previously-seen historical version. Keeping them would
+       cause the close-out in step 4 to invalidate the current row
+       without a replacement landing, since the insert in step 5
+       would no-op on the unique constraint.
+    4. Close out current versions in target whose hash differs from
+       staging (entity exists in both, but content changed).
+    5. Insert new versions (new entities + changed entities).
+    """
+    hash_columns = _hash_columns(columns, entity_key, hash_exclude, logger)
+    hash_expr = _build_hash_expression(hash_columns)
+    entity_join = " and ".join(f't."{k}" = s."{k}"' for k in entity_key)
+    entity_conflict = ", ".join(f'"{k}"' for k in entity_key)
+    result = Scd2Result()
+
+    # 1. Compute record_hash on staging rows
+    cur.execute(
+        f'alter table {staging_table} add column if not exists "record_hash" text'
+    )
+    cur.execute(f'update {staging_table} set "record_hash" = {hash_expr}')
+
+    # 2. Invalidate current target rows whose entity_key is absent
+    #    from staging. Must run before dedupe so staging still
+    #    contains evidence that unchanged entities are present.
+    if invalidate_missing:
+        cur.execute(f"""
+            update {fqn} t
+            set "valid_to" = now() at time zone 'utc'
+            where "valid_to" is null
+              and not exists (
+                select 1 from {staging_table} s
+                where {entity_join}
+              )
+        """)
+        result.rows_invalidated = cur.rowcount
+        logger.info(
+            "SCD2: invalidated %d removed entities in %s",
+            result.rows_invalidated,
+            fqn,
+        )
+
+    # 3. Dedupe staging against target history. Any (entity_key,
+    #    record_hash) that already exists in target — current or
+    #    closed — is not a new version and should not drive the
+    #    close-out below.
+    cur.execute(f"""
+        delete from {staging_table} s
+        using {fqn} t
+        where {entity_join}
+          and t."record_hash" = s."record_hash"
+    """)
+    rows_deduped = cur.rowcount
+    logger.info(
+        "SCD2: dropped %d staging rows whose (entity_key, record_hash) "
+        "already exists in %s",
+        rows_deduped,
+        fqn,
+    )
+
+    # 4. Close out current versions that have a new incoming version
+    #    (entity exists in both, but hash differs)
+    cur.execute(f"""
+        update {fqn} t
+        set "valid_to" = now() at time zone 'utc'
+        where "valid_to" is null
+          and exists (
+            select 1 from {staging_table} s
+            where {entity_join}
+              and s."record_hash" != t."record_hash"
+          )
+    """)
+    rows_closed = cur.rowcount
+    logger.info("SCD2: closed out %d superseded versions in %s", rows_closed, fqn)
+
+    # 5. Insert new versions. The on conflict clause is
+    #    belt-and-suspenders — step 3 already removed any staging
+    #    rows that would conflict — but it's cheap and guards
+    #    against any future code path that might bypass dedupe.
+    select_cols = ", ".join(f's."{c}"' for c in columns)
+    insert_col_list = f'{col_list}, "record_hash"'
+    cur.execute(f"""
+        insert into {fqn} ({insert_col_list})
+        select {select_cols}, s."record_hash"
+        from {staging_table} s
+        on conflict ({entity_conflict}, "record_hash") do nothing
+    """)
+    result.rows_merged = cur.rowcount
+
+    logger.info(
+        "SCD2: inserted %d new versions into %s "
+        "(staged %d, deduped %d, invalidated %d, closed %d)",
+        result.rows_merged,
+        fqn,
+        rows_staged,
+        rows_deduped,
+        result.rows_invalidated,
+        rows_closed,
+    )
+    return result
+
+
+def _hash_columns(
+    columns: list[str],
+    entity_key: list[str],
+    hash_exclude: set[str] | None,
+    logger: logging.Logger,
+) -> list[str]:
+    """The columns whose values define an entity version (drive the hash).
+
+    Excludes the entity_key (identity, not content) and any metadata columns
+    (which change every run regardless of content).
+    """
+    exclude = set(entity_key) | set(hash_exclude or set())
+    hash_cols = [c for c in columns if c not in exclude]
+    if not hash_cols:
+        raise ValueError(
+            f"No columns to hash after excluding entity_key {entity_key} "
+            f"and metadata columns {sorted(hash_exclude or set())}"
+        )
+    logger.info("SCD2: hashing columns: %s", hash_cols)
+    return hash_cols
+
+
+def _build_hash_expression(columns: list[str]) -> str:
+    """A SQL MD5 expression over the given columns (null-safe, '|'-joined)."""
+    parts = [f"""coalesce("{c}"::text, '')""" for c in columns]
+    concatenated = " || '|' || ".join(parts)
+    return f"md5({concatenated})"
