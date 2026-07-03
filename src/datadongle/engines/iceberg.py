@@ -204,7 +204,12 @@ class IcebergEngine:
     def _duckdb(self):
         import duckdb
 
-        return duckdb.connect()
+        con = duckdb.connect()
+        # Pin the session to UTC so naive timestamp strings cast to TIMESTAMPTZ as
+        # UTC instants (not the host's local zone) and read back identically. This
+        # keeps the engine deterministic regardless of the machine it runs on.
+        con.execute("SET TimeZone = 'UTC'")
+        return con
 
     def _history_arrow(self, target: TableRef, columns: tuple[str, ...] | None = None):
         table = self._load(target)
