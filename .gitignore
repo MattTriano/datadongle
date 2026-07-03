@@ -29,3 +29,6 @@ htmlcov/
 # Local data warehouses (Iceberg dev scratch)
 *.duckdb
 /scratch/
+
+# PyPI name-claim throwaway (not part of the project)
+_pypi_name_claim/
