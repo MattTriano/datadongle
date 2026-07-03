@@ -68,6 +68,13 @@ class PostgresEngine:
             dbname=self.db_name,
             user=self.creds.username,
             password=self.creds.password,
+            # Pin the session to UTC so naive timestamp strings COPYed into
+            # TIMESTAMPTZ columns are read as UTC instants (not the server's
+            # local zone) and round-trip identically through
+            # ``read_high_water_mark``. Socrata cursors are UTC; this keeps the
+            # engine deterministic regardless of the server's ``timezone`` GUC
+            # and conformant with IcebergEngine.
+            options="-c timezone=UTC",
         )
 
     @contextmanager
