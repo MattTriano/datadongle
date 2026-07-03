@@ -131,7 +131,7 @@ Insert-or-update keyed by `keys`.
 - `on_conflict="update"` — overwrite the conflicting row's non-key columns from the incoming row (last write wins).
 - `on_conflict="nothing"` — keep the existing row, ignore the incoming duplicate.
 
-Keeps exactly one row per key; **no history**. *(Supported by `PostgresEngine`; `IcebergEngine` support is not yet implemented.)*
+Keeps exactly one row per key; **no history**. Supported by both engines (`IcebergEngine` uses PyIceberg's native `upsert`).
 
 ### `SCD2(entity_key, invalidate_missing=False)`
 Keep **versioned history** keyed by `entity_key` plus a content hash. A new version is written **only when an entity's content actually changes**:
@@ -151,7 +151,7 @@ Keep **versioned history** keyed by `entity_key` plus a content hash. A new vers
 | "Current" version | `WHERE valid_to IS NULL` | Derived at read time: latest `effective_from` per `entity_key` (window function) |
 | Version columns | `record_hash`, `valid_from`, `valid_to` | `record_hash`, `effective_from`, `ingested_at`, `load_id` |
 | Integrity | unique index on `(entity_key, record_hash)` + partial index for current | dedupe via DuckDB anti-join against history |
-| `invalidate_missing` | sets `valid_to` on vanished entities | not yet implemented |
+| `invalidate_missing` | sets `valid_to` on vanished entities | appends a tombstone version (sentinel hash), hidden from current |
 
 Both engines yield the **same logical outcome** — identical row counts, the same no-op/version decisions, the same current-state — verified by the two-engine conformance suite (`tests/engines/test_conformance.py`).
 

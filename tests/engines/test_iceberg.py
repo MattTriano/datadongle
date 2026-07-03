@@ -196,14 +196,84 @@ def test_read_high_water_mark_self_heals_after_drop(engine):
     assert engine.read_high_water_mark(TARGET, CursorSpec("socrata_updated_at", "socrata_id")) is None
 
 
-# ------------------------------------------------------------------ unsupported modes
+# ------------------------------------------------------------------ upsert
 
 
-def test_upsert_not_supported(engine):
-    with pytest.raises(NotImplementedError):
-        engine.open_write(TARGET, _schema(), Upsert(keys=["permit_"]))
+def _kv_schema() -> TableSchema:
+    return TableSchema(columns=[Column("id", ColumnType.TEXT), Column("v", ColumnType.TEXT)])
 
 
-def test_invalidate_missing_not_supported(engine):
-    with pytest.raises(NotImplementedError):
-        engine.open_write(TARGET, _schema(), SCD2(entity_key=["permit_"], invalidate_missing=True))
+def test_upsert_inserts_then_updates(engine):
+    schema, target, mode = _kv_schema(), TableRef("things", "raw_data"), Upsert(keys=["id"])
+    engine.ensure_table(target, schema, mode)
+    _write(engine, target, schema, mode, [{"id": "a", "v": "1"}, {"id": "b", "v": "2"}])
+
+    # Update a, insert c.
+    merged = _write(engine, target, schema, mode, [{"id": "a", "v": "9"}, {"id": "c", "v": "3"}])
+    assert merged == 2  # 1 updated + 1 inserted
+
+    df = engine.read_current(target)  # no entity_key ⇒ the table is the current state
+    assert dict(zip(df["id"], df["v"])) == {"a": "9", "b": "2", "c": "3"}
+
+
+def test_upsert_on_conflict_nothing_keeps_existing(engine):
+    schema, target = _kv_schema(), TableRef("things", "raw_data")
+    mode = Upsert(keys=["id"], on_conflict="nothing")
+    engine.ensure_table(target, schema, mode)
+    _write(engine, target, schema, mode, [{"id": "a", "v": "1"}])
+
+    # a already present -> ignored; c is new -> inserted.
+    merged = _write(engine, target, schema, mode, [{"id": "a", "v": "9"}, {"id": "c", "v": "3"}])
+    assert merged == 1
+
+    df = engine.read_current(target)
+    assert dict(zip(df["id"], df["v"])) == {"a": "1", "c": "3"}
+
+
+# ------------------------------------------------------------- invalidate_missing
+
+
+INVALIDATING = SCD2(entity_key=["permit_"], invalidate_missing=True)
+
+
+def test_invalidate_missing_tombstones_absent_entity(engine):
+    engine.ensure_table(TARGET, _schema(), INVALIDATING)
+    _write(engine, TARGET, _schema(), INVALIDATING, [_rows(permit_="P1"), _rows(permit_="P2")])
+    assert set(engine.read_current(TARGET)["permit_"]) == {"P1", "P2"}
+
+    # A full pull missing P2: P1 unchanged (no new version), P2 tombstoned.
+    with engine.open_write(TARGET, _schema(), INVALIDATING) as ws:
+        ws.write_batch([_rows(permit_="P1")])
+    assert ws.rows_merged == 0
+    assert ws.rows_invalidated == 1
+
+    # P2 drops out of current but its history (version + tombstone) remains.
+    assert set(engine.read_current(TARGET)["permit_"]) == {"P1"}
+    hist = engine.read_history(TARGET)
+    assert (hist["permit_"] == "P2").sum() == 2
+
+
+def test_invalidate_missing_reappearance_with_change_restores(engine):
+    engine.ensure_table(TARGET, _schema(), INVALIDATING)
+    _write(engine, TARGET, _schema(), INVALIDATING, [_rows(permit_="P1"), _rows(permit_="P2")])
+    _write(engine, TARGET, _schema(), INVALIDATING, [_rows(permit_="P1")])  # P2 tombstoned
+    assert set(engine.read_current(TARGET)["permit_"]) == {"P1"}
+
+    # P2 returns with changed content -> a new version supersedes the tombstone.
+    _write(engine, TARGET, _schema(), INVALIDATING,
+           [_rows(permit_="P1"), _rows(permit_="P2", status="reopened")])
+    current = engine.read_current(TARGET)
+    assert set(current["permit_"]) == {"P1", "P2"}
+    assert current[current["permit_"] == "P2"]["status"].iloc[0] == "reopened"
+
+
+def test_invalidate_missing_does_not_double_tombstone(engine):
+    engine.ensure_table(TARGET, _schema(), INVALIDATING)
+    _write(engine, TARGET, _schema(), INVALIDATING, [_rows(permit_="P1"), _rows(permit_="P2")])
+    _write(engine, TARGET, _schema(), INVALIDATING, [_rows(permit_="P1")])  # tombstones P2
+
+    # P2 still absent: it is already a tombstone, so nothing new is written.
+    with engine.open_write(TARGET, _schema(), INVALIDATING) as ws:
+        ws.write_batch([_rows(permit_="P1")])
+    assert ws.rows_invalidated == 0
+    assert (engine.read_history(TARGET)["permit_"] == "P2").sum() == 2

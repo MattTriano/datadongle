@@ -38,6 +38,12 @@ logger = logging.getLogger(__name__)
 _INGESTED_AT = "ingested_at"
 _SCD2_EXTRA = ("record_hash", "effective_from", "load_id")
 
+# Sentinel record_hash marking an SCD2 tombstone: a version that records an
+# entity vanishing from a full-refresh pull (invalidate_missing). It never
+# collides with a real hash (those are 32-char md5 hex). read_current excludes
+# an entity whose latest version carries it; read_history still shows it.
+_TOMBSTONE_HASH = "__deleted__"
+
 # Table-property keys (persist the grain/geometry so reads are self-describing).
 _PROP_MODE = "datadongle.mode"
 _PROP_ENTITY_KEY = "datadongle.entity_key"
@@ -189,12 +195,8 @@ class IcebergEngine:
     def open_write(
         self, target: TableRef, schema: TableSchema, mode: WriteMode
     ) -> "IcebergWriteSession":
-        if isinstance(mode, Upsert):
-            raise NotImplementedError("IcebergEngine does not support Upsert yet.")
-        if isinstance(mode, SCD2) and mode.invalidate_missing:
-            raise NotImplementedError(
-                "IcebergEngine does not support SCD2 invalidate_missing yet."
-            )
+        if not isinstance(mode, (Append, Upsert, SCD2)):
+            raise TypeError(f"Unsupported write mode for IcebergEngine: {mode!r}")
         return IcebergWriteSession(self, target, schema, mode)
 
     # ------------------------------------------------------------------
@@ -236,7 +238,7 @@ class IcebergEngine:
                 f"    partition by {partition} "
                 f"    order by effective_from desc, ingested_at desc, load_id desc"
                 f"  ) rn from hist"
-                f") where rn = 1"
+                f") where rn = 1 and record_hash <> '{_TOMBSTONE_HASH}'"
             ).to_df()
         return self._to_frame(target, df)
 
@@ -259,7 +261,8 @@ class IcebergEngine:
                     f"select * exclude (rn) from ("
                     f"  select *, row_number() over (partition by {partition} "
                     f"    order by effective_from desc, ingested_at desc, load_id desc) rn "
-                    f"  from \"{target.name}\") where rn = 1"
+                    f"  from \"{target.name}\") "
+                    f"where rn = 1 and record_hash <> '{_TOMBSTONE_HASH}'"
                 )
         return con.sql(sql).to_df()
 
@@ -328,6 +331,31 @@ class IcebergEngine:
             return f"strftime(\"{column}\" AT TIME ZONE 'UTC', '{_HWM_TS_FORMAT}')"
         return f'"{column}"::varchar'
 
+    # ------------------------------------------------------------------
+    # Maintenance
+    # ------------------------------------------------------------------
+
+    def maintain(self, target: TableRef) -> dict[str, Any]:
+        """Compact data files and expire old snapshots — a no-op for now.
+
+        Shape B relies on compaction (many small append files coalesced) and
+        snapshot expiry (bounding metadata growth) to stay healthy over time.
+        The bundled PyIceberg (0.11) exposes neither ``rewrite_data_files`` nor
+        ``expire_snapshots`` — both are Spark-side maintenance procedures — so
+        there is nothing to run from this stack yet.
+
+        This method is the wiring point: callers can invoke it safely today,
+        and it becomes real when PyIceberg gains maintenance ops or a separate
+        (e.g. Spark) maintenance job is introduced. Returns a summary of what
+        it did.
+        """
+        logger.warning(
+            "IcebergEngine.maintain(%s): no-op — the bundled PyIceberg has no "
+            "compaction/snapshot-expiry API.",
+            target,
+        )
+        return {"target": str(target), "compacted": False, "snapshots_expired": 0}
+
 
 class IcebergWriteSession:
     """Buffers batches, then Shape-B appends on a clean exit."""
@@ -366,35 +394,115 @@ class IcebergWriteSession:
         run_ts = datetime.now(UTC)
         load_id = uuid.uuid4().hex
 
-        incoming = self._incoming_arrow()
         con = self._engine._duckdb()
-        con.register("incoming", incoming)
-
+        con.register("incoming", self._incoming_arrow())
         select_typed = self._typed_select(run_ts, load_id)
 
         if isinstance(self._mode, SCD2):
-            entity_key = self._mode.entity_key
-            hist = table.scan(selected_fields=(*entity_key, "record_hash")).to_arrow()
-            con.register("hist", hist)
-            join = " and ".join(f't."{k}" = h."{k}"' for k in entity_key)
-            partition = ", ".join(f't."{k}"' for k in entity_key)
-            new_rows = con.sql(
-                f"with typed as ({select_typed}) "
-                f"select * exclude (rn) from ("
-                f"  select t.*, row_number() over ("
-                f"    partition by {partition}, t.record_hash order by t.effective_from"
-                f"  ) rn "
-                f"  from typed t "
-                f"  left join hist h on {join} and t.record_hash = h.record_hash "
-                f"  where h.record_hash is null"
-                f") where rn = 1"
-            ).to_arrow_table()
-        else:
+            self._flush_scd2(table, con, select_typed, run_ts, load_id)
+        elif isinstance(self._mode, Upsert):
+            self._flush_upsert(table, con, select_typed)
+        else:  # Append
             new_rows = con.sql(select_typed).to_arrow_table()
+            if new_rows.num_rows:
+                table.append(new_rows.cast(table.schema().as_arrow()))
+            self.rows_merged = new_rows.num_rows
 
+    def _flush_upsert(self, table, con, select_typed: str) -> None:
+        """Insert-or-update keyed by ``Upsert.keys`` via PyIceberg's upsert."""
+        new_rows = con.sql(select_typed).to_arrow_table().cast(table.schema().as_arrow())
+        if not new_rows.num_rows:
+            self.rows_merged = 0
+            return
+        result = table.upsert(
+            new_rows,
+            join_cols=list(self._mode.keys),
+            when_matched_update_all=self._mode.on_conflict == "update",
+            when_not_matched_insert_all=True,
+        )
+        self.rows_merged = result.rows_updated + result.rows_inserted
+
+    def _flush_scd2(self, table, con, select_typed: str, run_ts, load_id) -> None:
+        """Append a new version per entity only when its content hash is new.
+
+        Change detection is a DuckDB anti-join of the typed incoming rows
+        against the target's ``(entity_key, record_hash)`` history. With
+        ``invalidate_missing`` (full pulls only), entities absent from this
+        pull are then tombstoned.
+        """
+        entity_key = self._mode.entity_key
+        hist = table.scan(selected_fields=(*entity_key, "record_hash")).to_arrow()
+        con.register("hist", hist)
+        join = " and ".join(f't."{k}" = h."{k}"' for k in entity_key)
+        partition = ", ".join(f't."{k}"' for k in entity_key)
+        new_rows = con.sql(
+            f"with typed as ({select_typed}) "
+            f"select * exclude (rn) from ("
+            f"  select t.*, row_number() over ("
+            f"    partition by {partition}, t.record_hash order by t.effective_from"
+            f"  ) rn "
+            f"  from typed t "
+            f"  left join hist h on {join} and t.record_hash = h.record_hash "
+            f"  where h.record_hash is null"
+            f") where rn = 1"
+        ).to_arrow_table()
         if new_rows.num_rows:
             table.append(new_rows.cast(table.schema().as_arrow()))
         self.rows_merged = new_rows.num_rows
+
+        if self._mode.invalidate_missing:
+            self.rows_invalidated = self._append_tombstones(run_ts, load_id)
+
+    def _append_tombstones(self, run_ts, load_id) -> int:
+        """Append a tombstone version for each live entity absent from the pull.
+
+        A live entity is one whose latest version is not already a tombstone.
+        The tombstone carries the entity_key, null data columns, and
+        ``record_hash = _TOMBSTONE_HASH`` so ``read_current`` stops surfacing
+        it while ``read_history`` keeps the record. Returns the count appended.
+        """
+        table = self._engine._load(self._target)  # latest snapshot
+        entity_key = self._mode.entity_key
+        con = self._engine._duckdb()
+        con.register("fullhist", table.scan().to_arrow())
+        con.register("incoming", self._incoming_arrow())
+
+        partition = ", ".join(f'"{k}"' for k in entity_key)
+        key_join = " and ".join(f'cast(l."{k}" as varchar) = ik."{k}"' for k in entity_key)
+        in_keys = ", ".join(f'"{k}"' for k in entity_key)
+
+        ts = run_ts.isoformat()
+        proj = []
+        for col in self._schema.columns:
+            if col.name in entity_key:
+                proj.append(f'l."{col.name}"')
+            elif col.name in self._schema.geometry:
+                proj.append(f'null::blob as "{col.name}"')
+            else:
+                proj.append(f'null::{_DUCKDB_CASTS[col.type]} as "{col.name}"')
+        proj.append(f"timestamptz '{ts}' as {_INGESTED_AT}")
+        proj.append(f"'{_TOMBSTONE_HASH}' as record_hash")
+        proj.append(f"timestamptz '{ts}' as effective_from")
+        proj.append(f"'{load_id}' as load_id")
+
+        tombstones = con.sql(
+            f"with cur as ("
+            f"  select * exclude (rn) from ("
+            f"    select *, row_number() over (partition by {partition} "
+            f"      order by effective_from desc, ingested_at desc, load_id desc) rn "
+            f"    from fullhist) where rn = 1"
+            f"), "
+            f"live as (select * from cur where record_hash <> '{_TOMBSTONE_HASH}'), "
+            f"in_keys as (select distinct {in_keys} from incoming) "
+            f"select {', '.join(proj)} from live l "
+            f"left join in_keys ik on {key_join} "
+            f'where ik."{entity_key[0]}" is null'
+        ).to_arrow_table()
+
+        if not tombstones.num_rows:
+            return 0
+        table.append(tombstones.cast(table.schema().as_arrow()))
+        return tombstones.num_rows
 
     def _incoming_arrow(self) -> pa.Table:
         """Incoming rows as Arrow: geometry -> WKB binary, everything else string."""
