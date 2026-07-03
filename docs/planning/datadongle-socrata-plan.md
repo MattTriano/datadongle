@@ -89,30 +89,28 @@ Mirrors the layout in the spec doc. Concrete pieces:
 5. `engines/iceberg.py` + `engines/_duckdb.py`; hermetic Iceberg tests + two-engine conformance + geometry round-trip. **Commit.**
 6. Re-point `loci/collectors/socrata/taskflow.py` to `datadongle`; apply the HWM-from-table correction to the spec doc; final checks. **Commit.**
 
-## Resume notes — updated end of session 2 (2026-07-01)
+## Resume notes — updated end of session 3 (2026-07-03)
 
-**Branch:** `feat/datadongle-socrata`, 3 commits ahead of `main` / `origin/main` (both at `10ceaaf`). Resume with `claude --continue` from `/workspace`, or read `docs/issues/…` + this file and continue from "Next steps" below.
+**Status: the Socrata + two-engine slice is COMPLETE.** All six sequenced steps landed on `feat/datadongle-socrata`; the full suite is green (**554 passed, 45 skipped, 28 deselected** — skips are the Postgres-backed tests without a DB; deselected are `network`-marked). Run it with `uv run --no-sync pytest`.
 
-**Repo structure now (settled):**
-- Repo root IS the `datadongle` uv project. Source in **`src/datadongle/`** (hatchling, src layout); tests in repo-root **`tests/`**; `loci/` is gone. `pyproject.toml` sets `requires-python = ">=3.13"`, extras `[postgres]`/`[geo]`/`[iceberg]`, dev group; `uv.lock` committed.
-- Airflow decision (resolves the earlier open question): **no Airflow in `datadongle`.** The only Airflow-coupled files (`collectors/socrata/taskflow.py`, `db/af_utils.py`) and the obsolete `tests/tasks` suite were deleted. Airflow glue will live outside the package later.
+**Environment (resolved):** deps are pre-synced into the uv cache; `requires-python >=3.13` is satisfied (CPython 3.13.14). The package build backend (`hatchling`) is NOT cached, so the project is not editable-installed — the suite runs via pytest `pythonpath = ["src"]`. `pyproject.toml` and `uv.lock` are **edit-locked** (ask the user to change deps/config). Details in the `datadongle-dev-env` memory.
 
-**Done and verified on Python 3.11 (dependency-free layers):**
-- `6cfe334` — uv scaffold; `loci.*`→`datadongle.*` across all files; core primitives: `core/cursor.py` (`Cursor`/`CursorSpec`), `core/schema.py` (`TableSchema`/`Column`/`ColumnType`/`GeometrySpec`), `core/write_mode.py` (`Append`/`Upsert`/`Scd2`). Tests in `tests/core/`.
-- `59b5f5d` — `core/engine.py` (`TableRef`, `WriteSession`, `Engine` protocols) + `core/reader.py` (`SourceReader`, incl. `dataset_id`). Both runtime_checkable.
-- `2c19f2b` — `load/driver.py` `run_collection` (full/incremental + HWM read from the target table). Tests in `tests/load/test_driver.py` (in-memory fakes, 6 pass).
+**Commits this slice (on top of `10ceaaf`):**
+- `a7e4606` — Phase 0 green under `datadongle` (ijson dep, pytest config, network marks, conftest skip fix, dead-code removal).
+- `989ebe0` — core decoupling: `Column.metadata`; `entity_key` off `TableSchema` (rides on `WriteMode`); `ensure_table(…, mode)`; `invalidate_missing`⇒full guard; `Scd2`→`SCD2`.
+- `970a3f6` — `PostgresEngine` moved to `engines/postgres.py` (+ `StagedIngest`→`engines/postgres_load.py`) implementing the Engine protocol; `db/core.py` keeps creds/logger/retries/MySQL.
+- `45e7e64` — `SocrataReader` (SourceReader adapter) driving the shared driver.
+- `b257e11` — Shape-B `IcebergEngine` (PyIceberg + core DuckDB + shapely; **no DuckDB extensions** — see `datadongle-iceberg-approach` memory) + hermetic tests + two-engine conformance.
+- `104344d` — spec doc corrected to the implemented HWM-from-table design.
 
-**ENVIRONMENT BLOCKER (must clear before continuing):**
-- `uv` is installed in-container (`/usr/bin/uv`), but `requires-python >=3.13` and the container only has **CPython 3.11.2**. The `.venv` was built on the host (`/home/matt/.local/share/uv/...`), so its interpreter is not usable in-container, and there is **no GitHub egress** to download 3.13.
-- **To unblock:** whitelist `github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`, then run `uv sync --all-extras` in-container (installs CPython 3.13 + all deps). Alternative: run `uv run pytest` on the host and feed results back.
+**PyPI:** the name `datadongle` is claimed (v0.0.1 placeholder published to PyPI + TestPyPI). Real releases just need a higher version.
 
-**FIRST thing after unblocking:** `uv run pytest` on the full suite. The `loci`→`datadongle` rename in the *existing* tests (`tests/collectors`, `tests/db`, `tests/parsers`, etc.) compiles but has **not** been run — fix any import/rename fallout so the pre-existing suite is green. Note: `tests/collectors` Postgres tests skip without `DWH_TEST_PG*`; the Iceberg path is designed hermetic.
-
-**Next steps (unchanged plan, engine layers still to build — all need the 3.13 env):**
-1. `engines/postgres.py`: `PostgresEngine` implementing the `Engine` protocol by wrapping the existing `StagedIngest` in `src/datadongle/db/core.py`; add `read_high_water_mark` (lift `SocrataCollector._get_hwm_from_table`), `ensure_table`, `table_columns`, `geometry_columns`. Port `tests/db/test_core.py`.
-2. `collectors/socrata/reader.py`: `SocrataReader` (reuse existing `spec.py`/`client.py`/`metadata.py`); delete the mode-dispatch logic in `collector.py`. Socrata-on-Postgres tests via the driver.
-3. `engines/iceberg.py` + `engines/_duckdb.py`: Shape-B `IcebergEngine` (PyIceberg append + DuckDB detect/query, WKB geometry, SQLite catalog). Hermetic Iceberg tests + two-engine conformance + geometry round-trip.
-4. Fix the spec doc's HWM section (it still says HWM moves to the tracker; corrected design reads HWM from the table).
+**Deferred follow-ups (known, not blocking the slice):**
+1. **Real-Postgres validation.** The PostgresEngine protocol methods are only unit-tested with a mocked cursor. Stand up PostGIS and set `DWH_TEST_PG*` — the conformance suite's Postgres arm and `tests/collectors`/`tests/db` DB tests then run and validate the actual SQL/DDL. (User's stated next step.)
+2. **Factor the Postgres merge** out of `StagedIngest.__exit__` into `append_merge`/`upsert_merge`/`scd2_merge` routines in `postgres_load.py` (moved verbatim for now; the 56 tests pin the SQL, so this is a safe pure refactor).
+3. **IcebergEngine `Upsert` and SCD2 `invalidate_missing`** raise `NotImplementedError` (Socrata needs neither; OSM-style `invalidate_missing` will need a tombstone design). `maintain()` (`rewrite_data_files` + `expire_snapshots`) not yet added.
+4. **Legacy `SocrataCollector`** still coexists with `SocrataReader` (tested legacy path); delete once consumers migrate.
+5. Other ~12 collectors still on the legacy `staged_ingest` path.
 
 **Conventions:** use `git mv` for moves; commit at green checkpoints with the `Co-Authored-By: Claude Opus 4.8 (1M context)` trailer; do not push (user pushes).
 
