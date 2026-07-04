@@ -105,12 +105,15 @@ Mirrors the layout in the spec doc. Concrete pieces:
 
 **PyPI:** the name `datadongle` is claimed (v0.0.1 placeholder published to PyPI + TestPyPI). Real releases just need a higher version.
 
-**Deferred follow-ups (known, not blocking the slice):**
-1. **Real-Postgres validation.** The PostgresEngine protocol methods are only unit-tested with a mocked cursor. Stand up PostGIS and set `DWH_TEST_PG*` — the conformance suite's Postgres arm and `tests/collectors`/`tests/db` DB tests then run and validate the actual SQL/DDL. (User's stated next step.)
-2. **Factor the Postgres merge** out of `StagedIngest.__exit__` into `append_merge`/`upsert_merge`/`scd2_merge` routines in `postgres_load.py` (moved verbatim for now; the 56 tests pin the SQL, so this is a safe pure refactor).
-3. **IcebergEngine `Upsert` and SCD2 `invalidate_missing`** raise `NotImplementedError` (Socrata needs neither; OSM-style `invalidate_missing` will need a tombstone design). `maintain()` (`rewrite_data_files` + `expire_snapshots`) not yet added.
-4. **Legacy `SocrataCollector`** still coexists with `SocrataReader` (tested legacy path); delete once consumers migrate.
-5. Other ~12 collectors still on the legacy `staged_ingest` path.
+**Completed since the slice:**
+1. **Real-Postgres validation** — done. User ran the full suite (incl. the conformance Postgres arm) against real PostGIS; surfaced a host-timezone bug fixed on both engines (`46dd3be` Iceberg, `ea747ec` Postgres: pin the session to UTC).
+2. **Factored the Postgres merge** into module-level `append_merge`/`upsert_merge`/`scd2_merge` in `postgres_load.py` (`a84721e`, byte-identical SQL; 73 tests pin it).
+3. **IcebergEngine `Upsert` + SCD2 `invalidate_missing` + `maintain()`** (`5d0c806`): Upsert via PyIceberg's native `table.upsert`; `invalidate_missing` via Shape-B tombstones (sentinel `record_hash='__deleted__'`, hidden from current); `maintain()` an honest no-op (PyIceberg 0.11 has no compaction/expiry API).
+4. **Deleted the legacy `SocrataCollector`** (+ its tests, dead conftest, and two collector-wiring tracker tests); README repointed to the reader + `run_collection` flow.
+
+**Deferred follow-ups (known, not blocking):**
+- Other ~12 collectors still on the legacy `staged_ingest` / `collect(spec, force)` path; migrate each onto a `SourceReader` + the shared driver (the Socrata slice is the template).
+- `maintain()` remains a no-op until a compaction/expiry path exists (PyIceberg gains the ops, or a separate Spark/DuckDB-extension maintenance job).
 
 **Conventions:** use `git mv` for moves; commit at green checkpoints with the `Co-Authored-By: Claude Opus 4.8 (1M context)` trailer; do not push (user pushes).
 
