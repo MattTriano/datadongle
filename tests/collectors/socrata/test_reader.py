@@ -73,12 +73,14 @@ def test_schema_maps_types_geometry_and_system_columns():
 
 def test_write_mode_scd2_when_entity_key():
     reader = SocrataReader()
-    assert reader.write_mode(_spec(entity_key=["permit_"])) == SCD2(entity_key=["permit_"])
+    assert reader.write_mode(_spec(entity_key=["permit_"]), mode="full") == SCD2(
+        entity_key=["permit_"]
+    )
 
 
 def test_write_mode_append_without_entity_key():
     reader = SocrataReader()
-    assert reader.write_mode(_spec()) == Append()
+    assert reader.write_mode(_spec(), mode="incremental") == Append()
 
 
 def test_cursor_spec_api():

@@ -152,7 +152,8 @@ class SocrataReader:
         col_type = _SOCRATA_TO_COLUMN_TYPE.get(col.datatype, ColumnType.TEXT)
         return Column(col.field_name, col_type)
 
-    def write_mode(self, spec: SocrataDatasetSpec) -> WriteMode:
+    def write_mode(self, spec: SocrataDatasetSpec, *, mode: str = "incremental") -> WriteMode:
+        # Socrata's policy doesn't depend on the collection mode.
         if spec.entity_key:
             return SCD2(entity_key=spec.entity_key)
         return Append()

@@ -83,7 +83,8 @@ class FakeReader:
     def schema(self, spec):
         return TableSchema(columns=[Column("id", ColumnType.TEXT)])
 
-    def write_mode(self, spec):
+    def write_mode(self, spec, *, mode):
+        self.write_mode_arg = mode
         return SCD2(entity_key=["id"])
 
     def cursor_spec(self, spec):
@@ -192,7 +193,7 @@ def test_ensure_table_receives_the_write_mode():
 
 
 class _InvalidateMissingReader(FakeReader):
-    def write_mode(self, spec):
+    def write_mode(self, spec, *, mode):
         return SCD2(entity_key=["id"], invalidate_missing=True)
 
 
@@ -208,3 +209,34 @@ def test_full_with_invalidate_missing_is_allowed():
     reader = _InvalidateMissingReader(PAGES)
     summary = run_collection(reader, SPEC, engine, mode="full")
     assert summary["rows_merged"] == 3
+
+
+def test_write_mode_receives_the_collection_mode():
+    """The driver hands write_mode the run's mode, so a reader can vary its
+    policy (e.g. OSM's invalidate_missing) by full vs. incremental."""
+    engine = FakeEngine()
+    reader = FakeReader(PAGES)
+    run_collection(reader, SPEC, engine, mode="full")
+    assert reader.write_mode_arg == "full"
+
+
+class _ModeDependentReader(FakeReader):
+    def write_mode(self, spec, *, mode):
+        return SCD2(entity_key=["id"], invalidate_missing=(mode == "full"))
+
+
+def test_mode_dependent_reader_incremental_is_not_rejected():
+    # invalidate_missing only turns on for a full pull, so an incremental run
+    # is accepted (no guard trip).
+    engine = FakeEngine(hwm=Cursor("2023-12-31", "0"))
+    reader = _ModeDependentReader(PAGES)
+    summary = run_collection(reader, SPEC, engine, mode="incremental")
+    assert summary["rows_merged"] == 3
+    assert not engine.open_write_args[2].invalidate_missing
+
+
+def test_mode_dependent_reader_full_enables_invalidate_missing():
+    engine = FakeEngine()
+    reader = _ModeDependentReader(PAGES)
+    run_collection(reader, SPEC, engine, mode="full")
+    assert engine.open_write_args[2].invalidate_missing

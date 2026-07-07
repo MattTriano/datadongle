@@ -4,30 +4,25 @@ HTTP client for the OSM Overpass API.
 
 Responsibilities:
 - POST queries to the Overpass endpoint, with retries and backoff.
-- Parse the JSON response, including geometry assembly via _geometry.
-- Transform OSM elements into row dicts ready for staged_ingest.
+- Parse the JSON response and return the raw Overpass payload.
+
+This is the HTTP boundary only; turning Overpass elements into stage-ready row
+dicts (geometry assembly, tag promotion, JSON encoding) is the OSMReader's job.
 
 Usage:
     client = OSMClient()
-    spec = OSMDatasetSpec(...)
-    for row in client.fetch_rows(spec):
-        # row is a dict with keys: osm_type, osm_id, osm_version,
-        # osm_timestamp, geom (WKT or None), tags (dict), plus one
-        # entry per promoted_tag column.
-        ...
+    response = client.fetch(query)          # raw Overpass JSON
+    elements = response["elements"]
 """
 
 from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Iterator
 from typing import Any
 
 import requests
-from datadongle.collectors.osm.geometry import element_to_wkt
 from datadongle.collectors.osm.query import OverpassAPIQuery
-from datadongle.collectors.osm.spec import OSMDatasetSpec
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -99,31 +94,6 @@ class OSMClient:
         ql = query.to_ql(date_filter=date_filter)
         return self._post(ql, http_timeout=query.timeout + self.extra_timeout)
 
-    def fetch_rows(
-        self,
-        spec: OSMDatasetSpec,
-        date_filter: str | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        """
-        Fetch the spec's query and yield row dicts ready for staged_ingest.
-
-        Each row has:
-            osm_type, osm_id, osm_version, osm_timestamp, geom, tags,
-            and one entry per promoted_tag column (None if missing).
-        """
-        response = self.fetch(spec.query, date_filter=date_filter)
-        elements = response.get("elements") or []
-
-        self.logger.info(
-            "Overpass returned %d elements for spec %r (date_filter=%s)",
-            len(elements),
-            spec.name,
-            date_filter,
-        )
-
-        for element in elements:
-            yield _element_to_row(element, spec)
-
     # ------------------------------------------------------------------
     # HTTP
     # ------------------------------------------------------------------
@@ -179,7 +149,7 @@ class OSMClient:
 
 
 # ----------------------------------------------------------------------
-# Element -> row dict
+# Error extraction
 # ----------------------------------------------------------------------
 
 
@@ -202,44 +172,3 @@ def _extract_overpass_error(body: str) -> str:
     if matches:
         return "\n".join(m.strip() for m in matches)
     return body[:1000].strip()
-
-
-def _element_to_row(element: dict, spec: OSMDatasetSpec) -> dict[str, Any]:
-    """
-    Turn one Overpass JSON element into a row dict matching the target table.
-
-    Promoted tag columns are populated by lookup against
-    spec.tag_column_map (original tag key -> normalized column name).
-    Missing tags become None.
-    """
-    tags = element.get("tags") or {}
-    nodes = element.get("nodes")
-
-    row: dict[str, Any] = {
-        "osm_type": element.get("type"),
-        "osm_id": element.get("id"),
-        "osm_version": element.get("version"),
-        "osm_timestamp": element.get("timestamp"),
-        "geom": element_to_wkt(element),
-        "tags": tags,
-        "node_ids": _format_pg_bigint_array(nodes),
-    }
-
-    # Promoted columns: look up each original tag key, write under its
-    # normalized column name.
-    for original_key, column_name in spec.tag_column_map.items():
-        row[column_name] = tags.get(original_key)
-
-    return row
-
-
-def _format_pg_bigint_array(values: list[int] | None) -> str | None:
-    """
-    Format a Python list of ints as a Postgres array literal for COPY.
-
-    Returns None for None or empty input (so the column gets NULL via
-    the NULL '\\N' marker that StagedIngest already handles).
-    """
-    if not values:
-        return None
-    return "{" + ",".join(str(v) for v in values) + "}"

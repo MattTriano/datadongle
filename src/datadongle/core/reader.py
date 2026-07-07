@@ -36,8 +36,15 @@ class SourceReader(Protocol):
     def schema(self, spec: Any) -> TableSchema:
         """The engine-neutral schema of the target table."""
 
-    def write_mode(self, spec: Any) -> WriteMode:
-        """The load policy (Append / Upsert / SCD2) for ``spec``."""
+    def write_mode(self, spec: Any, *, mode: str) -> WriteMode:
+        """The load policy (Append / Upsert / SCD2) for ``spec``.
+
+        ``mode`` is the collection mode (``"full"`` / ``"incremental"``) the
+        driver is about to run. Most sources ignore it, but a policy can
+        legitimately depend on it — e.g. OSM enables SCD2 ``invalidate_missing``
+        only on a ``"full"`` pull, where "which entities are absent" is
+        observable.
+        """
 
     def cursor_spec(self, spec: Any) -> CursorSpec | None:
         """Incremental cursor columns, or ``None`` if not incrementally queryable."""

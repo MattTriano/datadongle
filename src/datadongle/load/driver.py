@@ -44,7 +44,7 @@ def run_collection(
     """
     target = reader.target(spec)
     schema = reader.schema(spec)
-    write_mode = reader.write_mode(spec)
+    write_mode = reader.write_mode(spec, mode=mode)
 
     if (
         mode == "incremental"
