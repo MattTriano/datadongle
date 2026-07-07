@@ -124,27 +124,13 @@ class StagedIngest:
             self._col_list = ", ".join(f'"{c}"' for c in self._columns)
             self._create_staging_table()
 
-        # buf = self._rows_to_copy_buffer(rows)
-        import time
-
-        t0 = time.monotonic()
         buf = self._rows_to_copy_buffer(rows)
-        t1 = time.monotonic()
-
         with self._engine.cursor() as cur:
             cur.copy_expert(
                 f"copy {self._staging_table} ({self._col_list}) "
                 f"from stdin with (format text, NULL '\\N')",
                 buf,
             )
-        t2 = time.monotonic()
-
-        self._engine.logger.info(
-            "write_batch: %d rows (buffer=%.2fs, copy=%.2fs)",
-            len(rows),
-            t1 - t0,
-            t2 - t1,
-        )
 
         count = len(rows)
         self.rows_staged += count
