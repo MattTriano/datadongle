@@ -75,7 +75,7 @@ class CKANClient:
             Path(tmp.name).unlink(missing_ok=True)
             raise
 
-    def _suffix_for_format(self, fmt: str) -> str:
+    def suffix_for_format(self, fmt: str) -> str:
         """Map a CKAN resource format string to a file suffix."""
         fmt_upper = (fmt or "").upper()
         mapping = {

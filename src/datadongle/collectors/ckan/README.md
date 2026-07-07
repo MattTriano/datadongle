@@ -6,14 +6,14 @@ It is full-refresh-only: every run re-downloads and re-merges, with no increment
 
 Reach for this collector when the portal exposes a CKAN action API at `/api/3/action/...`.
 
-The four classes: `CKANMetadata` (browse the portal, inspect resources), `CKANDatasetSpec`, `CKANClient` (download files, query the DataStore), `CKANCollector`.
+The four classes: `CKANMetadata` (browse the portal, inspect resources), `CKANDatasetSpec`, `CKANClient` (download files, query the DataStore), and `CKANReader` — which adapts the source to datadongle's shared [`run_collection`](../../load/driver.py) driver so the same collection lands on any storage engine (`PostgresEngine`, `IcebergEngine`).
 
 ## 1. Find the dataset
 
 `CKANMetadata` browses the portal; reach it through a client:
 
 ```python
-from loci.collectors.ckan.client import CKANClient
+from datadongle.collectors.ckan.client import CKANClient
 
 client = CKANClient("https://data.cityofchicago.org")
 meta = client.metadata
@@ -45,12 +45,12 @@ And preview a few rows straight from the DataStore:
 client.datastore_search(resource_id, limit=5)
 ```
 
-`get_datastore_fields` already strips CKAN's internal columns (`_id`, `_full_text`), so what you see is the actual data schema. For file-only resources (no DataStore) you inspect by previewing through a draft spec (`collector.preview(spec, limit=5)`), which downloads and parses the first few rows.
+`get_datastore_fields` already strips CKAN's internal columns (`_id`, `_full_text`), so what you see is the actual data schema. For file-only resources (no DataStore) there's no server-side preview — download the file (`client.download_to_tempfile(resource.url)`) and eyeball the first rows.
 
 ## 3. Write the spec
 
 ```python
-from loci.collectors.ckan.spec import CKANDatasetSpec
+from datadongle.collectors.ckan.spec import CKANDatasetSpec
 
 CHICAGO_FOOD_INSPECTIONS_SPEC = CKANDatasetSpec(
     name="chicago_food_inspections",
@@ -72,8 +72,9 @@ Field by field:
 ### Gotchas
 
 - **Provide `resource_ids` or `resource_format`.** Omitting both raises in `__post_init__` — there's no default selection.
-- **Multiple resources feeding one table must share columns.** `generate_ddl` validates this (`_validate_columns_across_resources`) and fails hard on a mismatch, so a table fed by several yearly CSVs stays consistent.
-- **CKAN's internal columns are handled for you.** `_id` and `_full_text` are stripped throughout — don't put them in the spec or the table.
+- **Multiple resources feeding one table should share columns.** The table schema is discovered from the *first* resolved resource; a later resource whose columns drift is warned about, its extra columns are ignored, and its missing columns load as NULL. Keep multi-resource specs (e.g. yearly CSVs) column-consistent.
+- **CKAN's internal columns are handled for you.** `_id` and `_full_text` are stripped throughout — don't put them in the spec.
+- **Column names are normalized.** Raw headers are lowercased with non-alphanumerics collapsed to `_` (collisions get `_2`/`_3` suffixes), so the `entity_key` must use the *normalized* names.
 
 ### Finding the `entity_key`
 
@@ -90,25 +91,29 @@ Same principle as Socrata — verify uniqueness against the source rather than g
   An empty result means the column is unique. (This isn't wrapped in a helper yet — a CKAN analog of the Socrata `find_duplicate_keys` would be the natural addition.)
 - **File-only resources** have no server-side query, so fall back to a one-time ingest plus a warehouse `group by ... having count(*) > 1`, or trust an obvious domain id.
 
-## 4. Generate the DDL and create the table
+## 4. Collect
+
+`CKANReader` adapts the source to the shared `run_collection` driver. Hand the driver a reader, the spec, and a storage engine; the engine creates the table for you and lands the data — no manual DDL or migration step.
 
 ```python
-from loci.collectors.ckan.collector import CKANCollector
+from datadongle.collectors.ckan.reader import CKANReader
+from datadongle.engines.postgres import PostgresEngine   # or engines.iceberg.IcebergEngine
+from datadongle.load.driver import run_collection
 
-collector = CKANCollector(engine=engine)
-collector.print_ddl(spec)
+reader = CKANReader()
+engine = PostgresEngine(creds)                            # or IcebergEngine("/data/warehouse")
+
+summary = run_collection(reader, CHICAGO_FOOD_INSPECTIONS_SPEC, engine, mode="full")
 ```
 
-DDL is built from DataStore field types when available, otherwise from CSV/GeoJSON headers (typed as `text`, with a `geom` column added for GeoJSON). It includes `ingested_at` and, when `entity_key` is set, the SCD2 columns plus a unique constraint and a partial current-rows index. Paste it into a migration and apply it.
+`run_collection` calls `engine.ensure_table(...)` first, deriving the table shape from the source: if the first resource is in the DataStore, its typed field metadata becomes the schema; otherwise the resource file is downloaded and its header scanned — CSV columns are all `text`, GeoJSON contributes the first feature's properties plus a `geom` geometry column (`geometry(Geometry, 4326)` on PostGIS, WKB on Iceberg). A file downloaded for schema discovery is cached and consumed by the read, so each run fetches each resource once. On top of the discovered columns the engine adds `ingested_at` and — when `entity_key` is set — its SCD2 columns and indexes. The call returns a summary dict (`rows_staged`, `rows_merged`, `rows_invalidated`, `high_water_mark`).
 
-## 5. Collect
+CKAN has no update cursor (`cursor_spec` is `None`), so the mode barely matters: `mode="incremental"` logs that the source isn't incrementally queryable and runs a full read anyway. Use `mode="full"` for clarity.
 
-```python
-collector.collect(spec, force=True)
-```
+On the first parsed batch of each resource the reader compares the resource's normalized columns against the discovered schema and warns on drift — a resource that gained a column since the table was created gets flagged rather than silently dropped (the engines ignore columns the table doesn't have).
 
-CKAN is full-refresh-only, so `force` is accepted for interface parity but ignored — every run is a full refresh. `collect` returns a summary dict (`spec_name`, `mode`, `rows_merged`). On the first parsed batch of each resource the collector runs a warn-first column preflight against the table, so a resource that gained a column since the table was created gets flagged (logged by default; flip `raise_on_drift` to enforce) rather than silently dropped.
+The `Append` / `Upsert` / `SCD2` write-mode behaviors and the `full` vs `incremental` collection modes are shared across all collectors and documented in the [top-level README](../../../../README.md).
 
 ## Scheduling
 
-The spec is wrapped in a `DatasetUpdateConfig` in `sources/update_configs.py`. The CKAN taskflow is single-path — full refresh → `check_ingestion_log`, with no `choose_update_mode` branch — because there's no incremental mode to choose. That's a deliberate divergence from the other sources. Set whatever cadence you want via `update_cron`.
+In production the spec is wrapped in a `DatasetUpdateConfig` and a scheduled taskflow calls `run_collection(reader, spec, engine, mode="full")`. The CKAN taskflow is single-path — there's no incremental mode to choose — a deliberate divergence from the other sources. Set whatever cadence you want via `update_cron`.
