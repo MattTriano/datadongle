@@ -1,12 +1,33 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 
 import requests
-from loci.collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
+from requests.exceptions import ChunkedEncodingError, ConnectionError, HTTPError, ReadTimeout
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from datadongle.collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
 
 logger = logging.getLogger(__name__)
+
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry predicate for `_get_json`: transient HTTP statuses and read errors."""
+    if isinstance(exc, HTTPError) and exc.response is not None:
+        return exc.response.status_code in RETRYABLE_STATUS
+    return isinstance(
+        exc, (json.JSONDecodeError, ConnectionError, ReadTimeout, ChunkedEncodingError)
+    )
 
 
 class CensusClient:
@@ -21,8 +42,14 @@ class CensusClient:
 
     BASE = "https://api.census.gov/data"
 
-    def __init__(self, api_key: str, requests_per_second: float = 5.0):
+    def __init__(
+        self,
+        api_key: str | None = None,
+        requests_per_second: float = 5.0,
+        request_timeout: int = 120,
+    ):
         self.api_key = api_key
+        self.request_timeout = request_timeout
         self._session = requests.Session()
         self._min_interval = 1.0 / requests_per_second
         self._last_request_time = 0.0
@@ -35,12 +62,23 @@ class CensusClient:
             time.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
+    @retry(
+        retry=retry_if_exception(_is_retryable),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, max=10),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
+    )
     def _get_json(self, url: str, params: dict | None = None) -> list[list[str]]:
-        """Fetch JSON from the Census API. Returns the raw list-of-lists response."""
+        """Fetch JSON from the Census API. Returns the raw list-of-lists response.
+
+        Retries transient HTTP failures (429/5xx, connection/read errors) with
+        exponential backoff.
+        """
         self._throttle()
-        params = params or {}
-        params["key"] = self.api_key
-        resp = self._session.get(url, params=params)
+        params = dict(params or {})
+        if self.api_key:
+            params["key"] = self.api_key
+        resp = self._session.get(url, params=params, timeout=self.request_timeout)
         resp.raise_for_status()
         return resp.json()
 

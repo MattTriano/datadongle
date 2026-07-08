@@ -28,9 +28,9 @@ import tempfile
 from pathlib import Path
 
 import requests
-from loci.collectors.tiger.metadata import TigerMetadata
-from loci.collectors.tiger.spec import _CANDIDATE_ID_COLUMNS, TigerDatasetSpec
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.tiger.metadata import TigerMetadata
+from datadongle.collectors.tiger.spec import _CANDIDATE_ID_COLUMNS, TigerDatasetSpec
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -324,7 +324,7 @@ class TigerCollector:
 
         Returns (rows_staged, rows_merged).
         """
-        from loci.parsers.shapefile import parse_shapefile
+        from datadongle.parsers.shapefile import parse_shapefile
 
         self.logger.info(
             "Collecting %s vintage=%d state=%s url=%s",

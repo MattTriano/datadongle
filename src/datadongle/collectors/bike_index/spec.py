@@ -3,7 +3,7 @@
 BikeIndexDatasetSpec — defines a Bike Index dataset to collect.
 
 Usage:
-    from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
+    from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
     spec = BikeIndexDatasetSpec(
         name="chicago_bikeindex_bike_thefts",
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

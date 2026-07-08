@@ -3,7 +3,7 @@
 SocrataDatasetSpec — defines a Socrata dataset to collect.
 
 Usage:
-    from loci.collectors.socrata.spec import SocrataDatasetSpec
+    from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
     spec = SocrataDatasetSpec(
         name="chicago_building_permits",
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

@@ -1,5 +1,5 @@
 """
-Unit tests for loci.raster.wkb.to_hexwkb.
+Unit tests for datadongle.raster.wkb.to_hexwkb.
 
 These are pure and offline: we serialize, then decode the bytes back and
 assert the structure and pixels round-trip. The decoder lives only in the
@@ -13,7 +13,7 @@ import struct
 
 import numpy as np
 import pytest
-from loci.raster.wkb import to_hexwkb
+from datadongle.raster.wkb import to_hexwkb
 
 
 def decode(hexwkb: str) -> dict:

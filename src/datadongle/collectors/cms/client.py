@@ -8,7 +8,7 @@ Knows three things:
   3. how to stream a CSV distribution to disk
 
 Usage:
-    from loci.collectors.cms.client import CMSClient
+    from datadongle.collectors.cms.client import CMSClient
 
     client = CMSClient()
     catalog = client.get_catalog()

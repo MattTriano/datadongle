@@ -12,7 +12,7 @@ is city-agnostic.
 
 Usage from an Airflow task:
 
-    from loci.exports.geojson_export import GeoJsonExporter
+    from datadongle.exports.geojson_export import GeoJsonExporter
 
     exporter = GeoJsonExporter(engine, schema=cfg.marts_schema, output_dir=...)
     exporter.export_all(spec.geojson_exports)
@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from loci.db.core import PostgresEngine
+from datadongle.engines.postgres import PostgresEngine
 
 logger = logging.getLogger(__name__)
 

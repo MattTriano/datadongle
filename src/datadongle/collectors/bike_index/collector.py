@@ -16,9 +16,9 @@ Two-phase collection:
     3. collect(spec) — convenience method that runs both phases.
 
 Usage:
-    from loci.collectors.bike_index.client import BikeIndexClient
-    from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
-    from loci.collectors.bike_index.collector import BikeIndexCollector
+    from datadongle.collectors.bike_index.client import BikeIndexClient
+    from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
+    from datadongle.collectors.bike_index.collector import BikeIndexCollector
 
     spec = BikeIndexDatasetSpec(
         name="chicago_bikeindex_bike_thefts",
@@ -42,9 +42,9 @@ Usage:
 import json
 import logging
 
-from loci.collectors.bike_index.client import BikeIndexSearchParams
-from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.bike_index.client import BikeIndexSearchParams
+from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,6 @@
 # DKAN Collector
 
-Collection tooling for [DKAN](https://getdkan.org/) data portals. One source serves every DKAN portal; the portal is identified by `base_url` on the spec, and the collector caches one client per portal.
+Collection tooling for [DKAN](https://getdkan.org/) data portals. One reader serves every DKAN portal; the portal is identified by `base_url` on the spec, and the reader caches one client per portal.
 
 Known CMS portals running DKAN:
 
@@ -13,22 +13,21 @@ Note: despite the name, DKAN is **not** API-compatible with CKAN (it's a Drupal-
 
 ## Classes
 
-Standard four-class collector interface:
-
 * `DKANClient` (`client.py`) — thin HTTP client for one portal: cached metastore catalog fetch, datastore query paging (capped at 500 rows/page by DKAN), datastore row counts, and retrying streamed file downloads.
 * `DKANMetadata` (`metadata.py`) — catalog exploration: title search, dataset lookup, distribution listing, column sampling, and a `describe()` summary for notebook use.
-* `DKANSpec` (`spec.py`) — declares what to collect and where it goes. Subclass of `DatasetSpec`.
-* `DKANCollector` (`collector.py`) — orchestrates collection: `collect(spec, force)` and `generate_ddl(spec)`.
-
-Concrete spec instances live in `instances.py`.
+* `DKANDatasetSpec` (`spec.py`) — declares what to collect and where it goes. Subclass of `DatasetSpec`.
+* `DKANReader` (`reader.py`) — the `SourceReader` adapter for **one** dataset: schema discovery, retrieval, DKAN normalization, provenance stamping.
+* `run_dkan_collection` (`driver.py`) — the family driver that loops a spec's datasets into one table.
 
 ## Quick start
 
 ```python
-from loci.collectors.dkan.client import DKANClient
-from loci.collectors.dkan.metadata import DKANMetadata
-from loci.collectors.dkan.collector import DKANCollector
-from loci.collectors.dkan.spec import DKANSpec
+from datadongle.collectors.dkan.client import DKANClient
+from datadongle.collectors.dkan.metadata import DKANMetadata
+from datadongle.collectors.dkan.reader import DKANReader
+from datadongle.collectors.dkan.driver import run_dkan_collection
+from datadongle.collectors.dkan.spec import DKANDatasetSpec
+from datadongle.engines.postgres import PostgresEngine   # or engines.iceberg.IcebergEngine
 
 # Explore
 meta = DKANMetadata(DKANClient("https://data.cms.gov/provider-data"))
@@ -36,7 +35,7 @@ meta.titles("hospital")
 meta.describe("Hospital General Information", stats=True)
 
 # Specify
-spec = DKANSpec(
+spec = DKANDatasetSpec(
     name="pdc_hospital_general_information",
     base_url="https://data.cms.gov/provider-data",
     dataset_identifiers=["xubh-q36u"],
@@ -45,27 +44,27 @@ spec = DKANSpec(
     retrieval="datastore",
 )
 
-# Create the table (run the DDL via a migration), then collect
-collector = DKANCollector(engine=engine)
-collector.print_ddl(spec)
-summary = collector.collect(spec)            # incremental: skips fresh datasets
-summary = collector.collect(spec, force=True)  # recollect everything
+# Collect — the engine creates the table for you; no manual DDL step.
+reader = DKANReader()
+engine = PostgresEngine(creds)                 # or IcebergEngine("/data/warehouse")
+summary = run_dkan_collection(reader, spec, engine)
 ```
+
+Unlike a single-source reader (Socrata, OSM, CKAN), DKAN isn't driven through the shared `run_collection`: a spec is a *family* of datasets landing in one table, which the shared one-spec/one-table driver can't express. `run_dkan_collection` is a thin family driver over the same engine + reader primitives.
 
 ## Update semantics
 
-The unit of work is one metastore **dataset**. DKAN datasets are refreshed in place — one identifier, a dataset-level `modified` date, no version array — so `collect(spec, force=False)` recollects a dataset when it is missing from the target, incomplete, or its modified date has advanced. `force=True` recollects everything. All ingestion is `StagedIngest` in SCD2 mode, so recollection is always safe: unchanged rows dedupe away.
+The unit of work is one metastore **dataset**. DKAN datasets are refreshed in place — one identifier, a dataset-level `modified` date, no version array — and collection is **full-refresh-only**: there's no row cursor, so every run re-reads the dataset. All ingestion is SCD2, so this is safe and cheap in the steady state — an unchanged re-pull dedupes to zero merged rows and creates no new versions.
 
-Every row is stamped with two hash-excluded provenance columns: `_source_dataset` (which dataset it came from) and `_source_modified` (the dataset's modified date at collection time). A dataset is considered fresh when both hold:
+Every row is stamped with two hash-excluded provenance columns: `_source_dataset` (which dataset it came from — the grouping key across a family) and `_source_modified` (the dataset's `modified` date at collection time). Because they're hash-excluded, a re-publication that only bumps the modified date doesn't churn SCD2 history.
 
-1. current target rows for that `_source_dataset` `>=` the datastore's row count (`>=`, not `==`, because with `invalidate_missing=False` rows removed at the source remain current in the target), and
-2. the stored max `_source_modified` `>=` the catalog's modified date.
-
-After each successful ingest, `_source_modified` is advanced on the dataset's current rows. Without this, a re-publication whose rows mostly dedupe away would leave stale stamps behind and the dataset would be re-downloaded on every run.
+> **Migration note.** The previous `DKANCollector` had a *freshness-skip* — it read the target's row count and max `_source_modified` and skipped a dataset it judged already-current, and advanced `_source_modified` afterward so identical re-publications resettled. That was dropped in the reader migration: it saved a re-download only on the `file` path, was a footgun (silent "did nothing" runs, a heuristic that could misfire), and its post-merge UPDATE had no Shape-B/Iceberg analogue. Correctness never depended on it — SCD2 idempotency does the same job. If re-downloading a multi-GB `file` dataset every run proves costly in practice, a skip can be reintroduced behind this same driver.
 
 ## Multi-dataset families
 
-A spec may carry several `dataset_identifiers` landing in one target table — e.g. Open Payments publishes one dataset per program year. Each sibling is checked and collected independently, and a failure in one doesn't block the others.
+A spec may carry several `dataset_identifiers` landing in one target table — e.g. Open Payments publishes one dataset per program year. Each sibling is collected independently, in its own write session, and **a failure in one (including a failure to sample its schema) doesn't block the others** — it's reported in `summary["errors"]`.
+
+The target table is created once with the **union** of every sibling's columns, so a sibling that adds or drops a column relative to the others still gets a home for all of its data (a column a given sibling lacks is stored NULL for that sibling's rows).
 
 **The entity key must distinguish entities across siblings** (e.g. `["record_id", "program_year"]` for Open Payments). If it doesn't, rows from sibling datasets collide as "changed" versions of one entity and silently corrupt SCD2 history.
 
@@ -76,7 +75,7 @@ Note that Open Payments republishes *every* program year each January (correctio
 * `retrieval="datastore"` — pages rows out of the datastore API at 500 rows/page. Fine up to a few hundred thousand rows per dataset.
 * `retrieval="file"` — downloads the dataset's distribution file (assumed CSV) to a tempfile and stream-parses it. Use for the multimillion-row datasets (a single Open Payments year is ~11M rows / ~6 GB).
 
-The two modes are hash-equivalent: switching a spec's retrieval mode never churns SCD2 versions (see normalization below; empty strings vs NULLs also hash identically via `StagedIngest`'s `coalesce` hashing).
+The two modes are hash-equivalent: switching a spec's retrieval mode never churns SCD2 versions (see normalization below; empty strings vs NULLs also hash identically). Schema discovery always samples the datastore (one row), regardless of the retrieval mode.
 
 ## Column normalization
 
@@ -88,25 +87,25 @@ Use the normalized names in `entity_key`.
 
 ## invalidate_missing
 
-For single-dataset refresh-in-place specs, `invalidate_missing=True` closes out (`valid_to` set) current rows whose entity is absent from the fresh pull — the correct semantics when disappearance means delisting (e.g. a hospital leaving Care Compare). The default is `False`, consistent with the other collectors, in which case removed rows simply remain current.
+For single-dataset refresh-in-place specs, `invalidate_missing=True` closes out current rows whose entity is absent from the fresh pull — the correct semantics when disappearance means delisting (e.g. a hospital leaving Care Compare). On Postgres this sets `valid_to`; on Iceberg it appends a tombstone version. The default is `False`, consistent with the other collectors, in which case removed rows simply remain current.
 
-The spec **forbids** the flag for multi-dataset families: staging only ever holds one sibling, so invalidation would close out every other sibling's rows.
+The spec **forbids** the flag for multi-dataset families: each sibling is staged on its own, so invalidation would close out every other sibling's rows.
 
-## DDL generation
+## Schema and DDL
 
-`generate_ddl(spec)` samples one datastore row from every dataset in the spec and unions the normalized column sets, so column drift across a family's siblings all gets a home. All source columns are `text` (the APIs serve strings; casting is a downstream concern), plus `_source_dataset`/`_source_modified`, the pipeline columns, a `(entity_key, record_hash)` unique constraint, and a partial index on current rows. Keep `target_table` under ~48 characters so the generated constraint names stay within Postgres's identifier limit.
+There's no manual DDL step — `run_dkan_collection` calls `engine.ensure_table(...)`, deriving the table from a one-row datastore sample per dataset (unioned across a family). All source columns are `text` (the APIs serve strings; casting is a downstream concern), plus `_source_dataset`/`_source_modified` and the engine's SCD2 columns and indexes. `ensure_table` is create-if-not-exists — it won't evolve an existing table, so if a family gains a new column after the table exists, evolve the table before collecting. Keep `target_table` under ~48 characters so the generated constraint/index names stay within Postgres's identifier limit.
 
 ## Limitations
 
 * File retrieval assumes the first distribution (`index 0`) is a CSV. No other formats or distribution selection yet.
 * Datastore type metadata and data dictionaries are ignored; all columns are `text`.
-* `generate_ddl` requires datastore-backed datasets (it samples a row). All CMS DKAN datasets qualify.
-* Open Payments' `change_type` column participates in the record hash, so a record flipping e.g. `UNCHANGED` → `CHANGED` between publications creates a new SCD2 version even if payment fields are identical. That's arguably signal; if it churns too much history, add it to `hash_exclude_columns`.
+* Schema discovery requires datastore-backed datasets (it samples a row). All CMS DKAN datasets qualify.
+* Open Payments' `change_type` column participates in the record hash, so a record flipping e.g. `UNCHANGED` → `CHANGED` between publications creates a new SCD2 version even if payment fields are identical. That's arguably signal; if it churns too much history, mark it as a metadata column so it's hash-excluded.
 
 ## Tests
 
-Behavior tests live in `tests/collectors/dkan/`. The HTTP boundary is faked (`FakeDKANClient`); ingestion runs against a real Postgres so `StagedIngest`'s actual SCD2 semantics are part of what's tested. DB-backed tests use the same `CMS_TEST_PG*` env vars as the CMS collector tests and skip when no database is reachable:
+Behavior tests live in `tests/collectors/dkan/`. The HTTP boundary is faked (`FakeDKANClient`); the end-to-end driver tests run against a hermetic Iceberg warehouse (green everywhere) and, when `DWH_TEST_PG*` is configured, also against Postgres — both engines must agree.
 
 ```console
-uv run --env-file .env_test pytest platform/tests/collectors/dkan -v
+uv run --no-sync pytest tests/collectors/dkan -v
 ```

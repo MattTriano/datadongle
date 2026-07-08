@@ -34,9 +34,9 @@ from __future__ import annotations
 import re
 
 import pandas as pd
-from loci.collectors.census.abbreviations import ABBREVIATIONS
-from loci.collectors.census.metadata import CensusMetadata
-from loci.collectors.census.spec import CensusDatasetSpec
+from datadongle.collectors.census.abbreviations import ABBREVIATIONS
+from datadongle.collectors.census.metadata import CensusMetadata
+from datadongle.collectors.census.spec import CensusDatasetSpec
 
 # Maximum PostgreSQL identifier length.
 PG_MAX_IDENTIFIER = 63

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from loci.collectors.socrata.spec import SocrataDatasetSpec
+from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
 
 class TestSpecMaxRowsValidation:

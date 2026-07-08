@@ -3,7 +3,7 @@
 CMSDatasetSpec — defines a data.cms.gov dataset to collect.
 
 Usage:
-    from loci.collectors.cms.spec import CMSDatasetSpec
+    from datadongle.collectors.cms.spec import CMSDatasetSpec
 
     spec = CMSDatasetSpec(
         name="medicare_inpatient_by_provider_and_service",
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

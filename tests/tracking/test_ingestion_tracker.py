@@ -4,8 +4,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from loci.collectors.socrata.collector import SocrataCollector
-from loci.tracking.ingestion_tracker import IngestionRun, IngestionTracker
+from datadongle.tracking.ingestion_tracker import IngestionRun, IngestionTracker
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -31,16 +30,6 @@ def tracker(mock_engine):
 
 
 class TestIngestionTracker:
-    def test_auto_creates_tracker_when_none_provided(self, mock_engine):
-        c = SocrataCollector(engine=mock_engine)
-        assert isinstance(c.tracker, IngestionTracker)
-        assert c.tracker.engine is mock_engine
-
-    def test_uses_provided_tracker(self, mock_engine):
-        custom_tracker = IngestionTracker()
-        c = SocrataCollector(engine=mock_engine, tracker=custom_tracker)
-        assert c.tracker is custom_tracker
-
     def test_track_creates_successful_run(self, tracker):
         with tracker.track("socrata", "abcd-1234", "raw.table") as run:
             run.rows_ingested = 42

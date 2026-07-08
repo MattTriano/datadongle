@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from loci.collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
-from loci.collectors.socrata.spec import SocrataDatasetSpec
+from datadongle.collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
+from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
 # ---------------------------------------------------------------------------
 # Helpers

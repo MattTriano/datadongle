@@ -19,7 +19,7 @@ The `engine` seam already exists and is the right boundary — collectors call `
 
 - **Collection‑mode logic lives inside each collector.** `SocrataCollector.collect(spec, force)` hard‑codes the dispatch between full‑refresh‑via‑file, full‑refresh‑via‑API, and incremental, and each of the other collectors re‑implements its own near‑identical version of "read prior high‑water mark, filter the source, page, extract the new high‑water mark." This is source‑agnostic orchestration that should be shared, not copied per collector.
 
-- **The high‑water mark read leaks storage dialect into the collector.** `SocrataCollector._get_hwm_from_table` runs `to_char(socrata_updated_at at time zone 'UTC', ...)` directly against the target table. That is PostgreSQL‑specific SQL embedded in a collector, and it reads the HWM from the *data table* rather than from the tracker's `meta.ingest_log` — so it cannot work against an engine with a different SQL dialect.
+- **The high‑water mark read leaks storage dialect into the collector.** `SocrataCollector._get_hwm_from_table` runs `to_char(socrata_updated_at at time zone 'UTC', ...)` directly against the target table. Reading the HWM *from the target table* is the right design — it self‑heals if the table is dropped and rebuilt, where a tracker/log value would go stale — but that PostgreSQL‑specific SQL is embedded in a collector, so it cannot work against an engine with a different dialect. The fix keeps the read against the table and moves it behind `engine.read_high_water_mark(target, cursor_spec)`, where each engine supplies its own dialect (PostgreSQL `to_char(...)`; DuckDB `strftime(...)` over an Iceberg scan).
 
 - **The SCD2 merge is split between the collector and the engine.** The collector picks the *policy* (it passes `entity_key` for SCD2, or `conflict_column` for a simple upsert), while `StagedIngest` in `loci/db/core.py` implements the *mechanism* (temp table + `COPY` + the five‑step SCD2 merge). That split is fine, but the mechanism is written entirely in PostgreSQL terms (temp tables, `information_schema`, `md5(...)` SQL, a geometry cast), so today "SCD2" and "PostgreSQL" are inseparable.
 
@@ -76,7 +76,7 @@ Geometry is a first‑class requirement. In Iceberg/Parquet I'll store geometry 
 ```
 SourceReader (Socrata)        WriteMode (policy)          Engine (mechanism)
   what to fetch,          →   Append | Upsert(keys) |  →   PostgresEngine
-  how to page,                Scd2(entity_key)            IcebergEngine
+  how to page,                SCD2(entity_key)            IcebergEngine
   source transforms                                       (any WriteMode, natively)
         │                            │                          │
         └──────── RecordBatch = list[dict[str, Any]] ───────────┘
@@ -96,18 +96,18 @@ class Column:
     name: str
     type: ColumnType          # neutral type; see geometry section
     nullable: bool = True
+    metadata: bool = False    # source bookkeeping (row id, source ts/version); excluded from the SCD2 hash
 
-@dataclass(frozen=True)
+@dataclass
 class TableSchema:
-    columns: list[Column]
-    entity_key: list[str] | None = None
-    geometry: dict[str, GeometrySpec] | None = None   # col -> (kind, srid)
+    columns: list[Column]     # structure only; the natural key rides on the WriteMode
+    # .geometry is a derived {col -> GeometrySpec} property; SCD2/pipeline columns are engine-added
 
 # datadongle/core/write_mode.py
 class WriteMode: ...                      # base
 @dataclass class Append(WriteMode): ...
 @dataclass class Upsert(WriteMode): keys: list[str]; on_conflict: str = "update"
-@dataclass class Scd2(WriteMode): entity_key: list[str]; invalidate_missing: bool = False
+@dataclass class SCD2(WriteMode): entity_key: list[str]; invalidate_missing: bool = False
 
 # datadongle/core/engine.py
 class WriteSession(Protocol):             # what staged_ingest returns today, generalized
@@ -121,18 +121,23 @@ class WriteSession(Protocol):             # what staged_ingest returns today, ge
 class Engine(Protocol):
     def open_write(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> WriteSession: ...
     def query(self, sql: str, params=None): ...            # DataFrame/GeoDataFrame
-    def ensure_table(self, target: TableRef, schema: TableSchema) -> None: ...
+    def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None: ...  # mode-aware DDL
     def table_columns(self, target: TableRef) -> set[str]: ...
     def geometry_columns(self, target: TableRef) -> dict[str, int]: ...  # col -> srid
+    def read_high_water_mark(self, target: TableRef, cursor: CursorSpec) -> Cursor | None: ...  # from the table
 
 # datadongle/core/reader.py
 class SourceReader(Protocol):
     source: str
+    def target(self, spec) -> TableRef: ...
     def schema(self, spec) -> TableSchema: ...
     def write_mode(self, spec) -> WriteMode: ...
+    def cursor_spec(self, spec) -> CursorSpec | None: ...   # None => not incrementally queryable
     def read(self, spec, *, since: Cursor | None) -> Iterator[list[dict]]: ...  # applies source transforms
-    def extract_cursor(self, batch: list[dict]) -> Cursor | None: ...           # HWM from a batch
+    def extract_cursor(self, batch: list[dict]) -> Cursor | None: ...           # max cursor in a batch
 ```
+
+`ensure_table` is mode‑aware because the physical shape depends on the write policy: every table gets `ingested_at`; a keyed `SCD2` table also gets the engine's versioning columns (physical `record_hash`/`valid_from`/`valid_to` for PostgreSQL; an append‑only satellite for Iceberg). The natural key rides on the `WriteMode` (`Upsert.keys` / `SCD2.entity_key`), which the reader builds from `spec.entity_key`; `TableSchema` stays purely structural.
 
 `open_write(...)` is the generalization of today's `engine.staged_ingest(...)`; the returned `WriteSession` is the generalization of `StagedIngest`. The PostgreSQL implementation of `WriteSession` is essentially the current `StagedIngest`, unchanged.
 
@@ -142,24 +147,30 @@ The full‑vs‑incremental orchestration that is currently copied into every co
 
 ```python
 # datadongle/load/driver.py
-def run_collection(reader, spec, engine, tracker, *, mode: Literal["full", "incremental"]):
-    since = None if mode == "full" else tracker.get_cursor(reader.source, spec.dataset_id)
-    schema = reader.schema(spec)
-    engine.ensure_table(spec.target, schema)                     # idempotent; replaces generate_ddl copy/paste
-    with tracker.track(reader.source, spec.dataset_id, str(spec.target)) as run, \
-         engine.open_write(spec.target, schema, reader.write_mode(spec)) as ws:
+def run_collection(reader, spec, engine, tracker=None, *, mode: Literal["full", "incremental"]):
+    target, schema, write_mode = reader.target(spec), reader.schema(spec), reader.write_mode(spec)
+    engine.ensure_table(target, schema, write_mode)              # idempotent; replaces generate_ddl copy/paste
+
+    since = None
+    if mode == "incremental":
+        cursor_spec = reader.cursor_spec(spec)                   # None => source isn't incrementally queryable
+        if cursor_spec is not None:
+            since = engine.read_high_water_mark(target, cursor_spec)   # read from the target table
+
+    with tracker.track(reader.source, spec.dataset_id, str(target)) as run, \
+         engine.open_write(target, schema, write_mode) as ws:
         high = since
         for batch in reader.read(spec, since=since):
             ws.write_batch(batch)
             high = _max_cursor(high, reader.extract_cursor(batch))
         run.rows_staged, run.rows_merged = ws.rows_staged, ws.rows_merged
-        run.high_water_mark = _encode(high)
+        run.high_water_mark = _encode(high)                      # recorded for observability only
     return {"mode": mode, "rows_merged": ws.rows_merged}
 ```
 
-This is where the three axes finally separate: the driver knows nothing about Socrata or SQL; the reader knows nothing about staging or merges; the engine knows nothing about pagination or high‑water marks. Socrata's existing `file_download` vs `api` distinction becomes an internal detail of the reader's `read(...)` (a file‑download source simply ignores `since` and yields the whole export).
+This is where the three axes finally separate: the driver knows nothing about Socrata or SQL; the reader knows nothing about staging or merges; the engine knows nothing about pagination. Socrata's existing `file_download` vs `api` distinction becomes an internal detail of the reader: a `file_download` source returns `cursor_spec(spec) is None`, so the driver never reads a high‑water mark and the reader's `read(...)` ignores `since` and yields the whole export.
 
-The HWM read moves out of the collector and into the tracker (`tracker.get_cursor`), sourced from `meta.ingest_log`, removing the PostgreSQL `to_char(...)` from the collector entirely.
+The HWM read moves out of the collector and into the *engine* (`engine.read_high_water_mark(target, cursor_spec)`), still sourced from the **target table itself** — so it self‑heals across a drop/rebuild — with the dialect‑specific formatting (`to_char` / `strftime`) living inside each engine. The tracker no longer supplies the cursor; it only records the resulting HWM for observability.
 
 ### Package layout
 
@@ -169,7 +180,7 @@ datadongle/
   src/datadongle/
     core/
       schema.py             # Column, TableSchema, ColumnType, GeometrySpec
-      write_mode.py         # Append, Upsert, Scd2
+      write_mode.py         # Append, Upsert, SCD2
       engine.py             # Engine, WriteSession protocols
       reader.py             # SourceReader protocol; Cursor
       spec.py              # DatasetSpec base (moved from base_spec.py)
@@ -202,7 +213,7 @@ IcebergEngine(warehouse="/data/warehouse", catalog_db="/data/catalog.db",
 
 **Schema / `ensure_table`.** Translate `TableSchema` → PyIceberg schema. Data columns as their Parquet/Arrow types; geometry columns as `binary` (WKB) with `srid` recorded in field metadata. Append‑only satellites additionally carry `record_hash` (string), `effective_from` (timestamptz), `ingested_at`, and `load_id`. No `valid_to`/`is_current` columns.
 
-**Write path (`IcebergWriteSession`, `Scd2` mode).**
+**Write path (`IcebergWriteSession`, `SCD2` mode).**
 1. `write_batch(rows)` stages incoming rows to a temporary Parquet file (streamed; not held in memory).
 2. On `__exit__` (clean): open a temporary DuckDB connection, register the staged Parquet and the target Iceberg table, and run the change‑detection anti‑join, computing `record_hash` in SQL:
 
@@ -258,7 +269,7 @@ CREATE VIEW permits_timeline AS SELECT ...,                  -- adds derived val
 
 1. **Scaffold `datadongle`** with `uv` (src layout, extras, lockfile); move `base_spec.py`, `config.py`, `exceptions.py`, `utils.py`, and `IngestionTracker` in unchanged; get `uv run pytest` green on the moved pieces.
 2. **Define the interface**: `core/schema.py`, `core/write_mode.py`, `core/engine.py`, `core/reader.py`, and `geometry/types.py`.
-3. **Wrap PostgreSQL**: implement `PostgresEngine.open_write` returning a `WriteSession` backed by the existing `StagedIngest`; add `ensure_table`/`table_columns`/`geometry_columns`; move HWM to `tracker.get_cursor`.
+3. **Wrap PostgreSQL**: implement `PostgresEngine.open_write` returning a `WriteSession` backed by the existing `StagedIngest`; add `ensure_table`/`table_columns`/`geometry_columns`; add `read_high_water_mark` reading from the target table (lifting `_get_hwm_from_table`, generalized to `cursor_spec`).
 4. **Shared driver**: implement `load/driver.run_collection` and `load/schema_drift`.
 5. **Migrate Socrata** to a `SocrataReader` (spec/client/metadata kept; `collector.py`'s mode logic deleted in favor of the driver); make the conformance and geometry tests pass on PostgreSQL.
 6. **Implement `IcebergEngine`** (PyIceberg write + DuckDB detect/query, Shape B, WKB geometry); run Socrata end‑to‑end against it; make the hermetic Iceberg tests and the two‑engine conformance suite pass.

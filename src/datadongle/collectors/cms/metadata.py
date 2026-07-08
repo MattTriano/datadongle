@@ -10,8 +10,8 @@ are direct CSV downloads. This class groups those distributions into
 CMSDatasetVersion records, which is the unit the collector will ingest.
 
 Usage:
-    from loci.collectors.cms.client import CMSClient
-    from loci.collectors.cms.metadata import CMSMetadata
+    from datadongle.collectors.cms.client import CMSClient
+    from datadongle.collectors.cms.metadata import CMSMetadata
 
     meta = CMSMetadata(CMSClient())
     meta.search("inpatient hospitals")
@@ -26,7 +26,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from loci.collectors.cms.client import CMSClient
+from datadongle.collectors.cms.client import CMSClient
 
 _UUID_RE = re.compile(r"/dataset/([0-9a-f-]{36})", re.IGNORECASE)
 

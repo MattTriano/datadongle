@@ -31,7 +31,7 @@ from datetime import UTC, datetime
 import numpy as np
 import pytest
 import rasterio
-from loci.raster.ingest import ingest_raster_file, raster_table_ddl
+from datadongle.raster.ingest import ingest_raster_file, raster_table_ddl
 from rasterio.transform import from_origin
 
 # Small synthetic DEM: 300x300 at 10 m, north-up, NAD83. Pixel (r,c) holds
@@ -121,7 +121,7 @@ def _sample(engine, x, y):
 
 @pytest.fixture
 def engine():
-    from loci.db.core import PostgresEngine  # platform import
+    from datadongle.engines.postgres import PostgresEngine  # platform import
 
     eng = PostgresEngine(creds=_env_creds())
     # eng.execute("create extension if not exists postgis;")

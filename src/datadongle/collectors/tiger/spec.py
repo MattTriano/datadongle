@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import requests
-from loci.collectors.tiger.metadata import TIGER_LAYER_SCOPE, TigerMetadata
+from datadongle.collectors.tiger.metadata import TIGER_LAYER_SCOPE, TigerMetadata
 
 logger = logging.getLogger(__name__)
 

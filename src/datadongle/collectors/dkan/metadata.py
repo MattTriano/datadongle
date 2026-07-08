@@ -9,8 +9,8 @@ by (dataset identifier, distribution index) — index 0 for the typical
 single-distribution dataset.
 
 Usage:
-    from loci.collectors.dkan.client import DKANClient
-    from loci.collectors.dkan.metadata import DKANMetadata
+    from datadongle.collectors.dkan.client import DKANClient
+    from datadongle.collectors.dkan.metadata import DKANMetadata
 
     meta = DKANMetadata(DKANClient("https://data.cms.gov/provider-data"))
     meta.titles("hospital")
@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loci.collectors.dkan.client import DKANClient
+from datadongle.collectors.dkan.client import DKANClient
 
 
 @dataclass

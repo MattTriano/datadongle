@@ -173,7 +173,7 @@ def _fake_parse_county_with_fips(filepath, **kwargs):
 # ---------------------------------------------------------------------------
 
 # We patch at the module level where things are looked up.
-COLLECTOR_MODULE = "loci.collectors.tiger.collector"
+COLLECTOR_MODULE = "datadongle.collectors.tiger.collector"
 
 
 @pytest.fixture
@@ -193,7 +193,7 @@ def collector_deps():
         engine = _make_engine()
 
         # Import here so the patches are active
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         collector = TigerCollector(engine=engine)
 
@@ -203,7 +203,7 @@ def collector_deps():
 
         # parse_shapefile is imported lazily inside _download_parse_ingest
         with patch(
-            "loci.parsers.shapefile.parse_shapefile",
+            "datadongle.parsers.shapefile.parse_shapefile",
             side_effect=_fake_parse_shapefile,
         ):
             with patch.object(Path, "unlink"):
@@ -222,13 +222,13 @@ def collector_no_geoid():
 
         engine = _make_engine()
 
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         collector = TigerCollector(engine=engine)
         collector._download_to_tempfile = MagicMock(return_value=Path("/tmp/fake.zip"))
 
         with patch(
-            "loci.parsers.shapefile.parse_shapefile",
+            "datadongle.parsers.shapefile.parse_shapefile",
             side_effect=_fake_parse_no_geoid,
         ):
             with patch.object(Path, "unlink"):
@@ -246,13 +246,13 @@ def collector_county_no_fips():
 
         engine = _make_engine()
 
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         collector = TigerCollector(engine=engine)
         collector._download_to_tempfile = MagicMock(return_value=Path("/tmp/fake.zip"))
 
         with patch(
-            "loci.parsers.shapefile.parse_shapefile",
+            "datadongle.parsers.shapefile.parse_shapefile",
             side_effect=_fake_parse_county_no_fips,
         ):
             with patch.object(Path, "unlink"):
@@ -270,13 +270,13 @@ def collector_county_with_fips():
 
         engine = _make_engine()
 
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         collector = TigerCollector(engine=engine)
         collector._download_to_tempfile = MagicMock(return_value=Path("/tmp/fake.zip"))
 
         with patch(
-            "loci.parsers.shapefile.parse_shapefile",
+            "datadongle.parsers.shapefile.parse_shapefile",
             side_effect=_fake_parse_county_with_fips,
         ):
             with patch.object(Path, "unlink"):
@@ -448,7 +448,7 @@ class TestTempFileCleanup:
 
         with patch.object(Path, "unlink") as mock_unlink:
             with patch(
-                "loci.parsers.shapefile.parse_shapefile",
+                "datadongle.parsers.shapefile.parse_shapefile",
                 side_effect=_fake_parse_shapefile,
             ):
                 collector.collect(spec)
@@ -461,7 +461,7 @@ class TestTempFileCleanup:
 
         with patch.object(Path, "unlink") as mock_unlink:
             with patch(
-                "loci.parsers.shapefile.parse_shapefile",
+                "datadongle.parsers.shapefile.parse_shapefile",
                 side_effect=Exception("parse boom"),
             ):
                 summary = collector.collect(spec)
@@ -497,7 +497,7 @@ class TestVintageInjection:
 
 class TestExtractCountyFips:
     def _extract(self, filename, vintage):
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         return TigerCollector._extract_county_fips(filename, vintage)
 
@@ -522,7 +522,7 @@ class TestExtractCountyFips:
 
 class TestResolveEntityKey:
     def _resolve(self, spec, columns):
-        from loci.collectors.tiger.collector import TigerCollector
+        from datadongle.collectors.tiger.collector import TigerCollector
 
         return TigerCollector._resolve_entity_key(spec, columns)
 

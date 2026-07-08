@@ -4,7 +4,7 @@ Socrata (now Tyler Data & Insights) powers open-data portals like `data.cityofch
 
 Reach for this collector when the source is a Socrata / Tyler open-data portal — you'll see the Socrata dataset UI and a `…/resource/<4x4>.json` API endpoint.
 
-The tooling is four classes: `SocrataTableMetadata` (inspect a dataset), `SocrataDatasetSpec` (declare what to collect and where), `SocrataClient` (talk to the SODA API), and `SocrataCollector` (orchestrate collection and DDL).
+The tooling is four classes: `SocrataTableMetadata` (inspect a dataset), `SocrataDatasetSpec` (declare what to collect and where), `SocrataClient` (talk to the SODA API), and `SocrataReader` — which adapts the dataset to datadongle's shared [`run_collection`](../../load/driver.py) driver so the same collection lands on any storage engine (`PostgresEngine`, `IcebergEngine`).
 
 ## 1. Find the dataset
 
@@ -15,7 +15,7 @@ Socrata identifies every dataset by a four-by-four ID (the "4x4", e.g. `ydr8-5en
 `SocrataTableMetadata` fetches a dataset's schema without touching the warehouse, so you can explore before building anything:
 
 ```python
-from loci.collectors.socrata.metadata import SocrataTableMetadata
+from datadongle.collectors.socrata.metadata import SocrataTableMetadata
 
 meta = SocrataTableMetadata("ydr8-5enu")   # Chicago building permits
 print(meta.domain)           # data.cityofchicago.org
@@ -37,7 +37,7 @@ Preview real rows straight from the API (no warehouse needed):
 
 ```python
 import os
-from loci.collectors.socrata.client import SocrataClient
+from datadongle.collectors.socrata.client import SocrataClient
 
 client = SocrataClient(app_token=os.environ["SOCRATA_APP_TOKEN"])
 rows = client.query(domain=meta.domain, dataset_id="ydr8-5enu", limit=5, include_system_fields=True)
@@ -50,7 +50,7 @@ rows = client.query(domain=meta.domain, dataset_id="ydr8-5enu", limit=5, include
 `SocrataDatasetSpec` describes what to pull and where it lands:
 
 ```python
-from loci.collectors.socrata.spec import SocrataDatasetSpec
+from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
 CHICAGO_BUILDING_PERMITS_SPEC = SocrataDatasetSpec(
     name="chicago_building_permits",
@@ -89,39 +89,40 @@ client.find_duplicate_keys(meta.domain, "ydr8-5enu", ["permit_"])
 # [ {...}, ... ] -> not unique: up to 5 example duplicate groups to inspect
 ```
 
-Nulls surface naturally — rows sharing a null in the candidate column group together and show up as a duplicate, flagging a null-heavy column as a bad key. Once a candidate comes back empty, put it in the spec and generate the DDL.
+Nulls surface naturally — rows sharing a null in the candidate column group together and show up as a duplicate, flagging a null-heavy column as a bad key. Once a candidate comes back empty, put it in the spec and collect.
 
 ### Gotchas
 
 - **`file_download` needs a domain `entity_key`.** File exports have `socrata_id = NULL` on every row, so `entity_key=["socrata_id"]` would collapse every row to one null key and break the SCD2 merge. Pick a real domain identifier for file-mode datasets.
-- **Geospatial datasets export as GeoJSON.** When `meta.is_geospatial` is true the collector downloads GeoJSON and the table needs a PostGIS geometry column — which `generate_ddl` produces automatically from the column types.
+- **Geospatial datasets export as GeoJSON.** When `meta.is_geospatial` is true the reader pulls GeoJSON and the table needs a geometry column — which `ensure_table` creates automatically from the column types (PostGIS `geometry` on Postgres, WKB on Iceberg).
 
-## 4. Generate the DDL and create the table
+## 4. Collect
 
-```python
-from loci.collectors.socrata.collector import SocrataCollector
-
-collector = SocrataCollector(engine=engine, app_token=os.environ["SOCRATA_APP_TOKEN"])
-collector.print_ddl(CHICAGO_BUILDING_PERMITS_SPEC)
-```
-
-This prints a `create table if not exists …` with one column per source field (typed via the Socrata→PG mapping), the renamed system columns (`socrata_id`, `socrata_updated_at`, …), an `ingested_at` column, and — when `entity_key` is set — the SCD2 columns (`record_hash`, `valid_from`, `valid_to`) plus a unique constraint and a partial "current rows" index. Paste it into a migration and apply it; the collector does not create tables itself.
-
-## 5. Collect
+`SocrataReader` adapts the dataset to the shared `run_collection` driver. Hand the driver a reader, the spec, and a storage engine; the engine creates the table for you and lands the data — no manual DDL or migration step.
 
 ```python
-collector.collect(spec, force=True)    # full refresh
-collector.collect(spec, force=False)   # incremental update
+from datadongle.collectors.socrata.reader import SocrataReader
+from datadongle.engines.postgres import PostgresEngine   # or engines.iceberg.IcebergEngine
+from datadongle.load.driver import run_collection
+
+reader = SocrataReader(app_token=os.environ["SOCRATA_APP_TOKEN"])
+engine = PostgresEngine(creds)                            # or IcebergEngine("/data/warehouse")
+
+run_collection(reader, CHICAGO_BUILDING_PERMITS_SPEC, engine, mode="full")            # full refresh
+summary = run_collection(reader, CHICAGO_BUILDING_PERMITS_SPEC, engine, mode="incremental")
 ```
 
-`collect` returns a summary dict (`spec_name`, `mode`, `rows_merged`). What `force` means depends on the mode:
+`run_collection` calls `engine.ensure_table(...)` first, deriving the table shape from the dataset metadata: one column per source field, the renamed system columns (`socrata_id`, `socrata_updated_at`, …), an `ingested_at` column, and — when `entity_key` is set — the engine's SCD2 columns (physical `valid_from`/`valid_to` on Postgres, an append-only satellite on Iceberg) plus the matching uniqueness / current-version indexes. A geospatial dataset's geometry column is created as a PostGIS `geometry` (or Iceberg WKB) column automatically. The call returns a summary dict (`rows_staged`, `rows_merged`, `rows_invalidated`, `high_water_mark`).
 
-- `api`, `force=True` → full scan of the dataset via the API.
-- `api`, `force=False` → incremental: resumes from the table's max `socrata_updated_at` (with `socrata_id` as a tiebreak).
-- `file_download`, any `force` → full bulk-export refresh; `force` is ignored.
+What the mode means:
 
-Drift protection: before a file download the collector peeks the CSV header and checks it against the table; an `api` incremental checks its first page's columns. New source columns surface as schema drift — warn-first on the file path, raising on the api path — so you add them via migration rather than silently dropping data.
+- `mode="full"` → full scan of the dataset (API pagination, or a bulk file export for `file_download` specs).
+- `mode="incremental"` (api only) → resumes from the target table's max `socrata_updated_at` (with `socrata_id` as a tiebreak), read back from the table itself so it self-heals across a drop/rebuild. A `file_download` spec has no cursor, so an incremental request transparently falls back to a full read.
+
+`ensure_table` uses `create table if not exists`, so it won't alter an existing table — if the source grows a new column, evolve the table before collecting.
+
+The `Append` / `Upsert` / `SCD2` write-mode behaviors (chosen here by whether the spec has an `entity_key`) and the `full` vs `incremental` collection modes are shared across all collectors and documented in the [top-level README](../../../../README.md).
 
 ## Scheduling
 
-In production the spec is wrapped in a `DatasetUpdateConfig` in `sources/update_configs.py`, and the Socrata taskflow calls `collect(spec, force=…)` based on the schedule (the `choose_update_mode` task decides full vs. incremental for that run).
+In production the spec is wrapped in a `DatasetUpdateConfig` and a scheduled taskflow calls `run_collection(reader, spec, engine, mode=…)`, deciding full vs. incremental per run.

@@ -6,7 +6,7 @@ come from the parent conftest; shared code (NoopTracker) from ..common.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.static.collector import StaticFileCollector
+from datadongle.collectors.static.collector import StaticFileCollector
 
 from ..common import NoopTracker
 from .helpers import FakeStaticFileClient, default_files, make_spec

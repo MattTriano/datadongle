@@ -8,7 +8,7 @@ of FileRefs on the spec *is* the metadata for this source type, which is
 why there is no StaticFileMetadata class.
 
 Usage:
-    from loci.collectors.static_file.spec import FileRef, StaticFileDatasetSpec
+    from datadongle.collectors.static_file.spec import FileRef, StaticFileDatasetSpec
 
     spec = StaticFileDatasetSpec(
         name="ahrq_chsp_hospital_linkage",
@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 SUPPORTED_FORMATS = ("csv", "xlsx")
 

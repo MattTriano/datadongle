@@ -5,9 +5,9 @@ Shared fixtures and test helpers for bike_index tests.
 from unittest.mock import MagicMock
 
 import pytest
-from loci.collectors.bike_index.client import BikeIndexClient
-from loci.collectors.bike_index.collector import BikeIndexCollector
-from loci.collectors.bike_index.spec import BikeIndexDatasetSpec
+from datadongle.collectors.bike_index.client import BikeIndexClient
+from datadongle.collectors.bike_index.collector import BikeIndexCollector
+from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
 # ------------------------------------------------------------------ #
 #  Test data builders

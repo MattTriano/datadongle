@@ -6,7 +6,7 @@ catches manifest mistakes at construction time, not at collection time.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
+from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
 
 
 class TestFileRefValidation:

@@ -3,7 +3,7 @@
 ArcGISHubDatasetSpec — defines an ArcGIS Hub dataset to collect.
 
 Usage:
-    from loci.collectors.arcgis_hub.spec import ArcGISHubDatasetSpec
+    from datadongle.collectors.arcgis_hub.spec import ArcGISHubDatasetSpec
 
     spec = ArcGISHubDatasetSpec(
         name="tps_arrests",
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 
 @dataclass

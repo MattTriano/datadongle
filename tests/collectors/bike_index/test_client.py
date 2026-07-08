@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
-from loci.collectors.bike_index.client import (
+from datadongle.collectors.bike_index.client import (
     BikeIndexClient,
     BikeIndexSearchParams,
     RateLimitedError,

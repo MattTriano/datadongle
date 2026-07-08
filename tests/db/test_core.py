@@ -4,7 +4,8 @@ from urllib.parse import quote_plus
 import pandas as pd
 import psycopg2
 import pytest
-from loci.db.core import DatabaseCredentials, PostgresEngine
+from datadongle.db.core import DatabaseCredentials
+from datadongle.engines.postgres import PostgresEngine
 
 
 @pytest.fixture

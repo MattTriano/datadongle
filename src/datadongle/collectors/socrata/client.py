@@ -18,11 +18,20 @@ from tenacity import (
 
 logger = logging.getLogger(__name__)
 
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    """Retry predicate for `_request`: transient HTTP statuses and read errors."""
+    if isinstance(exc, HTTPError) and exc.response is not None:
+        return exc.response.status_code in RETRYABLE_STATUS
+    return isinstance(
+        exc, (json.JSONDecodeError, ConnectionError, ReadTimeout, ChunkedEncodingError)
+    )
+
 
 class SocrataClient:
     """Executes SoQL queries against a Socrata domain and yields results."""
-
-    RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
     def __init__(
         self,
@@ -110,15 +119,8 @@ class SocrataClient:
             params["$limit"] = str(limit)
         return self._request(domain, dataset_id, params, include_system_fields)
 
-    def is_retryable(self, exc: Exception) -> bool:
-        if isinstance(exc, HTTPError) and exc.response is not None:
-            return exc.response.status_code in self.RETRYABLE_STATUS
-        return isinstance(
-            exc, (json.JSONDecodeError, ConnectionError, ReadTimeout, ChunkedEncodingError)
-        )
-
     @retry(
-        retry=retry_if_exception(is_retryable),
+        retry=retry_if_exception(_is_retryable),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING),

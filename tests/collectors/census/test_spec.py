@@ -1,7 +1,7 @@
 """Tests for CensusDatasetSpec."""
 
 import pytest
-from loci.collectors.census.spec import ALL_STATE_FIPS, GEOGRAPHY_CONFIG, CensusDatasetSpec
+from datadongle.collectors.census.spec import ALL_STATE_FIPS, GEOGRAPHY_CONFIG, CensusDatasetSpec
 
 # ------------------------------------------------------------------ #
 #  Validation

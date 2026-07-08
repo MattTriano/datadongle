@@ -10,12 +10,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from loci.collectors.static.client import (
+from datadongle.collectors.static.client import (
     StaticFileClient,
     StaticFileDownloadError,
     sanitize_column_name,
 )
-from loci.collectors.static.spec import FileRef
+from datadongle.collectors.static.spec import FileRef
 
 from .helpers import FakeStaticFileClient, csv_bytes
 

@@ -31,10 +31,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from loci.collectors.static.client import StaticFileClient
-from loci.collectors.static.spec import FileRef, StaticFileDatasetSpec
-from loci.db.core import PostgresEngine
-from loci.tracking.ingestion_tracker import IngestionTracker
+from datadongle.collectors.static.client import StaticFileClient
+from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
+from datadongle.engines.postgres import PostgresEngine
+from datadongle.tracking.ingestion_tracker import IngestionTracker
 
 logger = logging.getLogger(__name__)
 

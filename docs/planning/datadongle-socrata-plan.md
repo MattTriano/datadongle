@@ -89,22 +89,36 @@ Mirrors the layout in the spec doc. Concrete pieces:
 5. `engines/iceberg.py` + `engines/_duckdb.py`; hermetic Iceberg tests + two-engine conformance + geometry round-trip. **Commit.**
 6. Re-point `loci/collectors/socrata/taskflow.py` to `datadongle`; apply the HWM-from-table correction to the spec doc; final checks. **Commit.**
 
-## Resume notes — end of session 2026-07-01
+## Resume notes — updated end of session 3 (2026-07-03)
 
-**Done so far:**
-- Baseline commit on `main` (`5785fa9`), branch **`feat/datadongle-socrata`** checked out.
-- Design doc committed at `docs/issues/datadongle-collector-refactor-and-iceberg-engine.md`; this plan committed at `docs/planning/datadongle-socrata-plan.md` (`020d054`).
-- Host-side `uv init` left artifacts at repo root: `pyproject.toml` (`name = "datadongle"`, `requires-python = ">=3.13"`), `main.py`, `README.md`, `.python-version` → `3.13`. These still need adjusting (below).
+**Status: the Socrata + two-engine slice is COMPLETE.** All six sequenced steps landed on `feat/datadongle-socrata`; the full suite is green (**554 passed, 45 skipped, 28 deselected** — skips are the Postgres-backed tests without a DB; deselected are `network`-marked). Run it with `uv run --no-sync pytest`.
 
-**Environment blockers to clear before resuming implementation:**
-- `uv` binary is **not installed inside this container** (only host-side); add it to the Dockerfile for this Claude Code env.
-- Container Python is **3.11.2**; `pyproject` pins `>=3.13`. Either add a 3.13 interpreter (uv can fetch one) or set `requires-python = ">=3.11"`. Decide when resuming.
+**Environment (resolved):** deps are pre-synced into the uv cache; `requires-python >=3.13` is satisfied (CPython 3.13.14). The package build backend (`hatchling`) is NOT cached, so the project is not editable-installed — the suite runs via pytest `pythonpath = ["src"]`. `pyproject.toml` and `uv.lock` are **edit-locked** (ask the user to change deps/config). Details in the `datadongle-dev-env` memory.
 
-**Layout decision (updates the earlier "Where things live" section):**
-- The repo root IS the `datadongle` project. Create **`src/datadongle/`** and migrate the existing `loci/` code into it so **`loci/` no longer exists**. Relocate `tests/` sensibly (e.g. repo-root `tests/` mapping onto the new `src/datadongle/` modules). Remove the `uv init` stub `main.py`.
-- **OPEN QUESTION to confirm first thing on resume:** does the *entire* `loci/` package move into `datadongle` (including the Airflow-coupled `*/taskflow.py` and `sources/update_configs.py`), or only the collector tooling + engines + shared load layer, with the Airflow glue extracted to a separate location? This must be reconciled with the hard rule that **`datadongle` imports no Airflow**. Likely answer: taskflows/DAGs live in a separate top-level (e.g. `airflow/` or a `datadongle-airflow` extra) that depends on `datadongle`; confirm with the user.
+**Commits this slice (on top of `10ceaaf`):**
+- `a7e4606` — Phase 0 green under `datadongle` (ijson dep, pytest config, network marks, conftest skip fix, dead-code removal).
+- `989ebe0` — core decoupling: `Column.metadata`; `entity_key` off `TableSchema` (rides on `WriteMode`); `ensure_table(…, mode)`; `invalidate_missing`⇒full guard; `Scd2`→`SCD2`.
+- `970a3f6` — `PostgresEngine` moved to `engines/postgres.py` (+ `StagedIngest`→`engines/postgres_load.py`) implementing the Engine protocol; `db/core.py` keeps creds/logger/retries/MySQL.
+- `45e7e64` — `SocrataReader` (SourceReader adapter) driving the shared driver.
+- `b257e11` — Shape-B `IcebergEngine` (PyIceberg + core DuckDB + shapely; **no DuckDB extensions** — see `datadongle-iceberg-approach` memory) + hermetic tests + two-engine conformance.
+- `104344d` — spec doc corrected to the implemented HWM-from-table design.
 
-**How to resume:** from `/workspace`, run `claude --continue` (resumes this session if `/root/.claude` persisted) or `claude --resume` to pick it. If history was lost in the rebuild, point a fresh session at `docs/issues/…` + `docs/planning/…` and say "continue implementing the datadongle plan." Next actionable step is **step 2 (uv scaffold + core primitives)** below.
+**PyPI:** the name `datadongle` is claimed (v0.0.1 placeholder published to PyPI + TestPyPI). Real releases just need a higher version.
+
+**Completed since the slice:**
+1. **Real-Postgres validation** — done. User ran the full suite (incl. the conformance Postgres arm) against real PostGIS; surfaced a host-timezone bug fixed on both engines (`46dd3be` Iceberg, `ea747ec` Postgres: pin the session to UTC).
+2. **Factored the Postgres merge** into module-level `append_merge`/`upsert_merge`/`scd2_merge` in `postgres_load.py` (`a84721e`, byte-identical SQL; 73 tests pin it).
+3. **IcebergEngine `Upsert` + SCD2 `invalidate_missing` + `maintain()`** (`5d0c806`): Upsert via PyIceberg's native `table.upsert`; `invalidate_missing` via Shape-B tombstones (sentinel `record_hash='__deleted__'`, hidden from current); `maintain()` an honest no-op (PyIceberg 0.11 has no compaction/expiry API).
+4. **Deleted the legacy `SocrataCollector`** (+ its tests, dead conftest, and two collector-wiring tracker tests); README repointed to the reader + `run_collection` flow.
+5. **Migrated the OSM/Overpass collector** to `OSMReader` + `run_collection`; deleted `collector.py`; slimmed `client.py` to the HTTP boundary (element→row transforms moved into the reader); README repointed. New shape decisions: (a) `SourceReader.write_mode(spec, *, mode)` now takes the collection mode so OSM enables SCD2 `invalidate_missing` only on a `full` pull (Socrata ignores it); (b) OSM's HWM is the engine-stamped `ingested_at` via the generic `CursorSpec("ingested_at")` — `extract_cursor` returns `None`, the reader feeds the table's HWM to Overpass `(newer:)`; (c) `node_ids` moved from Postgres-only `bigint[]` to engine-neutral JSON, and `tags`/`node_ids` are JSON-encoded in the reader; (d) geometry emitted as EWKT (`SRID=4326;…`). Fresh OSM test suite (69 tests: reader/query/geometry/spec/client — the legacy OSM tests had been deleted). Full suite 598 passed.
+
+6. **Migrated the CKAN collector** to `CKANReader` + `run_collection` (session 2026-07-07); deleted `collector.py`. CKAN covers the full-refresh-only case: `cursor_spec`/`extract_cursor` return `None`, so the driver always runs a full read. Schema is *discovered* per run (DataStore typed fields → `ColumnType`, else file header scan: CSV all-text, GeoJSON props + `geom`); a file downloaded for discovery is cached on the reader and consumed by `read()` so each run fetches once. Column names normalized with `_2`/`_3` collision suffixes; drift vs. the discovered schema is warned (engines ignore extras, load missing as NULL — replaces the legacy filter-to-table-columns). `client._suffix_for_format` → public `suffix_for_format`. Fresh 21-test suite (there were no legacy CKAN tests). Full suite 619 passed. Also removed debug-timing cruft accidentally committed into `postgres_load.write_batch` in 970a3f6.
+
+**Deferred follow-ups (known, not blocking):**
+- Other ~8 collectors still on the legacy `staged_ingest` / `collect(spec, force)` path; migrate each onto a `SourceReader` + the shared driver (Socrata, OSM, and CKAN are the templates — OSM covers SCD2/`invalidate_missing` + non-source-column HWM; CKAN covers full-refresh-only + discovered schema + file parsing). DKAN is CKAN's near-twin and should go next.
+- `maintain()` remains a no-op until a compaction/expiry path exists (PyIceberg gains the ops, or a separate Spark/DuckDB-extension maintenance job).
+
+**Conventions:** use `git mv` for moves; commit at green checkpoints with the `Co-Authored-By: Claude Opus 4.8 (1M context)` trailer; do not push (user pushes).
 
 ## Out of scope (this slice)
 

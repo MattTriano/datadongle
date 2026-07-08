@@ -1,36 +1,31 @@
-# """
-# Census data collection and ingestion pipeline.
-#
-# Classes:
-#     CensusDatasetSpec  — defines what census data to collect
-#     CensusClient       — makes Census Bureau API calls
-#     CensusCollector    — orchestrates collection and ingestion to Postgres
-#
-# Usage:
-#     from census_collector import CensusDatasetSpec, CensusClient, CensusCollector
-#
-#     spec = CensusDatasetSpec(
-#         name="occupation_by_sex",
-#         dataset="acs/acs5",
-#         vintages=[2019, 2020, 2021, 2022],
-#         groups=["B24010"],
-#         variables=["B01001_001E"],
-#         geography_level="tract",
-#         target_table="occupation_by_sex_tract",
-#         target_schema="raw_data",
-#     )
-#
-#     client = CensusClient(api_key="YOUR_KEY")
-#     collector = CensusCollector(client=client, engine=engine)
-#     collector.collect(spec)
-# """
+"""CensusDatasetSpec — declares what Census data to collect and where it lands.
+
+One spec maps a set of Census variables/groups, collected across vintages and
+states, to exactly one target table. The fan-out over ``vintages × states`` and
+the union-of-vintages schema are handled by ``run_census_collection`` (the
+Census family driver); this module only describes the dataset.
+
+Usage:
+    from datadongle.collectors.census.spec import CensusDatasetSpec
+
+    spec = CensusDatasetSpec(
+        name="occupation_by_sex",
+        dataset="acs/acs5",
+        vintages=[2019, 2020, 2021, 2022],
+        groups=["B24010"],
+        variables=["B01001_001E"],
+        geography_level="tract",
+        target_table="occupation_by_sex_tract",
+        target_schema="raw_data",
+    )
+"""
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 
-from loci.collectors.base_spec import DatasetSpec
+from datadongle.collectors.base_spec import DatasetSpec
 
 logger = logging.getLogger(__name__)
 

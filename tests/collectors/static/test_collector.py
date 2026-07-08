@@ -10,8 +10,8 @@ ingests through the collector's own generated DDL.
 from __future__ import annotations
 
 import pytest
-from loci.collectors.static.collector import StaticFileCollector
-from loci.collectors.static.spec import FileRef
+from datadongle.collectors.static.collector import StaticFileCollector
+from datadongle.collectors.static.spec import FileRef
 
 from ..common import NoopTracker
 from .helpers import (

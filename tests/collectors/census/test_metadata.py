@@ -3,7 +3,7 @@
 from unittest.mock import patch
 
 import pytest
-from loci.collectors.census.metadata import CensusMetadata
+from datadongle.collectors.census.metadata import CensusMetadata
 
 
 @pytest.fixture
@@ -60,6 +60,13 @@ class TestListDatasets:
     def test_keyword_filters_by_title_and_description(self, metadata):
         with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
             df = metadata.list_datasets(keyword="redistricting")
+
+        assert len(df) == 1
+        assert df.iloc[0]["name"] == "dec/pl"
+
+    def test_search_is_a_keyword_alias_for_list_datasets(self, metadata):
+        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
+            df = metadata.search("redistricting")
 
         assert len(df) == 1
         assert df.iloc[0]["name"] == "dec/pl"

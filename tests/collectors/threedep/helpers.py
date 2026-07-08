@@ -21,8 +21,8 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
-from loci.collectors.threedep.spec import ThreeDEPDatasetSpec
-from loci.geo import BBox
+from datadongle.collectors.threedep.spec import ThreeDEPDatasetSpec
+from datadongle.geo import BBox
 from rasterio.transform import from_origin
 
 # Synthetic tile is coarse (a 1-degree cell in PX pixels); SUB_TILE is the
