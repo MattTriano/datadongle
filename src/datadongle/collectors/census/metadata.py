@@ -57,6 +57,15 @@ class CensusMetadata:
     #  Public methods
     # ------------------------------------------------------------------ #
 
+    def search(self, text: str | None = None, max_len: int = 200) -> pd.DataFrame:
+        """Common-vocabulary alias for :meth:`list_datasets` ("what's available?").
+
+        Every collector's metadata answers ``search(text)``; for the deeper
+        Census hierarchy use :meth:`list_vintages`, :meth:`list_groups`,
+        :meth:`list_variables`, and :meth:`list_geographies`.
+        """
+        return self.list_datasets(keyword=text, max_len=max_len)
+
     def list_datasets(self, keyword: str | None = None, max_len: int = 200) -> pd.DataFrame:
         """
         List available Census API datasets.

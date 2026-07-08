@@ -64,6 +64,13 @@ class TestListDatasets:
         assert len(df) == 1
         assert df.iloc[0]["name"] == "dec/pl"
 
+    def test_search_is_a_keyword_alias_for_list_datasets(self, metadata):
+        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
+            df = metadata.search("redistricting")
+
+        assert len(df) == 1
+        assert df.iloc[0]["name"] == "dec/pl"
+
     def test_keyword_is_case_insensitive(self, metadata):
         with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
             df = metadata.list_datasets(keyword="COMMUNITY SURVEY")

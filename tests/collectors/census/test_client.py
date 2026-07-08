@@ -1,15 +1,47 @@
 """Tests for CensusClient."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
-from datadongle.collectors.census.client import CensusClient
+import requests
+from datadongle.collectors.census.client import CensusClient, _is_retryable
 from datadongle.collectors.census.spec import MAX_VARIABLES_PER_CALL, CensusDatasetSpec
 
 
 @pytest.fixture
 def client():
     return CensusClient(api_key="test_key")
+
+
+# ------------------------------------------------------------------ #
+#  Retry predicate
+# ------------------------------------------------------------------ #
+
+
+class TestIsRetryable:
+    def test_retries_on_transient_http_status(self):
+        resp = MagicMock(status_code=503)
+        assert _is_retryable(requests.HTTPError(response=resp)) is True
+
+    def test_does_not_retry_on_client_error(self):
+        resp = MagicMock(status_code=404)
+        assert _is_retryable(requests.HTTPError(response=resp)) is False
+
+    def test_retries_on_connection_error(self):
+        assert _is_retryable(requests.exceptions.ConnectionError()) is True
+
+    def test_get_json_retries_then_succeeds(self):
+        c = CensusClient(api_key="k", requests_per_second=1000.0)
+        session = MagicMock()
+        ok = MagicMock()
+        ok.raise_for_status.return_value = None
+        ok.json.return_value = [["NAME"], ["x"]]
+        session.get.side_effect = [requests.exceptions.ConnectionError(), ok]
+        c._session = session
+
+        result = c._get_json("http://example/data")
+        assert result == [["NAME"], ["x"]]
+        assert session.get.call_count == 2
 
 
 # ------------------------------------------------------------------ #
