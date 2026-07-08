@@ -1,12 +1,12 @@
 # /loci_platform/platform/airflow/dags/loci/collectors/dkan/spec.py
 """
-DKANSpec — defines a DKAN dataset (or family of datasets) to collect.
+DKANDatasetSpec — defines a DKAN dataset (or family of datasets) to collect.
 
 Usage:
-    from datadongle.collectors.dkan.spec import DKANSpec
+    from datadongle.collectors.dkan.spec import DKANDatasetSpec
 
     # Single refresh-in-place dataset (Provider Data Catalog):
-    spec = DKANSpec(
+    spec = DKANDatasetSpec(
         name="pdc_hospital_general_information",
         base_url="https://data.cms.gov/provider-data",
         dataset_identifiers=["xubh-q36u"],
@@ -16,7 +16,7 @@ Usage:
     )
 
     # Multi-dataset family into one table (Open Payments program years):
-    spec = DKANSpec(
+    spec = DKANDatasetSpec(
         name="openpayments_general_payments",
         base_url="https://openpaymentsdata.cms.gov",
         dataset_identifiers=["fb3a65aa-...", "e6b17c6a-..."],
