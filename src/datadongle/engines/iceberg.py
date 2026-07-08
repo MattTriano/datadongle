@@ -15,17 +15,30 @@ snapshots.
 No DuckDB native extensions are used (see the datadongle-iceberg-approach
 memory): PyIceberg does all Iceberg I/O, core DuckDB does the change-detection
 join, and shapely handles WKB geometry.
+
+Bounded memory: a write session does not buffer the pull in RAM. Incoming rows
+are staged to a temp Parquet file (one batch at a time), the change-detection
+join runs in DuckDB with an on-disk spill directory, and survivors are streamed
+back into the table in ``STREAM_CHUNK_ROWS`` chunks. Peak footprint is roughly
+one batch plus one chunk, so large collections run on small machines. The
+tradeoff is more, smaller data files per flush — ``maintain`` is where those get
+compacted. (Two paths are not yet streamed: ``Upsert``, since PyIceberg's upsert
+needs the whole incoming set, and the SCD2 history key/hash scan used for change
+detection, which still materializes two columns of history.)
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 import uuid
 from datetime import UTC, datetime
 from typing import Any
 
 import pyarrow as pa
+import pyarrow.parquet as pq
 
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
@@ -103,13 +116,30 @@ def _to_wkb(value: Any) -> bytes | None:
 class IcebergEngine:
     """Local Iceberg warehouse engine (Shape-B SCD2 + DuckDB queries)."""
 
-    def __init__(self, warehouse: str, catalog_name: str = "datadongle") -> None:
-        import os
+    # Rows per chunk when streaming merged survivors back into the table. Bounds
+    # the peak Arrow footprint of a flush at roughly one chunk (not the whole
+    # dataset), at the cost of one data file per chunk — compaction coalesces
+    # them later. See `maintain`.
+    STREAM_CHUNK_ROWS = 50_000
 
+    def __init__(
+        self,
+        warehouse: str,
+        catalog_name: str = "datadongle",
+        staging_dir: str | None = None,
+        memory_limit: str | None = None,
+    ) -> None:
         from pyiceberg.catalog.sql import SqlCatalog
 
         self.warehouse = str(warehouse)
         os.makedirs(self.warehouse, exist_ok=True)
+        # Where incoming rows are staged on disk and where DuckDB spills its
+        # out-of-core joins. Defaults to the OS temp dir; point it at a roomy
+        # disk on a small-RAM box. `memory_limit` (e.g. "512MB") caps DuckDB's
+        # buffer pool so it spills sooner; None keeps DuckDB's own default.
+        self.staging_dir = str(staging_dir) if staging_dir else tempfile.gettempdir()
+        os.makedirs(self.staging_dir, exist_ok=True)
+        self.memory_limit = memory_limit
         self.catalog = SqlCatalog(
             catalog_name,
             **{
@@ -211,6 +241,11 @@ class IcebergEngine:
         # UTC instants (not the host's local zone) and read back identically. This
         # keeps the engine deterministic regardless of the machine it runs on.
         con.execute("SET TimeZone = 'UTC'")
+        # An in-memory DuckDB can only spill large joins to disk when a
+        # temp_directory is set — this is what keeps a big flush out-of-core.
+        con.execute(f"SET temp_directory = '{self.staging_dir}'")
+        if self.memory_limit is not None:
+            con.execute(f"SET memory_limit = '{self.memory_limit}'")
         return con
 
     def _history_arrow(self, target: TableRef, columns: tuple[str, ...] | None = None):
@@ -358,7 +393,10 @@ class IcebergEngine:
 
 
 class IcebergWriteSession:
-    """Buffers batches, then Shape-B appends on a clean exit."""
+    """Stages batches to a temp Parquet file, then Shape-B appends on a clean
+    exit. Peak memory is one batch during the read and one chunk during the
+    merge — never the whole dataset — so large collections run on small boxes.
+    """
 
     def __init__(
         self,
@@ -371,13 +409,22 @@ class IcebergWriteSession:
         self._target = target
         self._schema = schema
         self._mode = mode
-        self._rows: list[dict[str, Any]] = []
+        self._stage_path = os.path.join(
+            engine.staging_dir, f"datadongle-stage-{uuid.uuid4().hex}.parquet"
+        )
+        self._writer: pq.ParquetWriter | None = None
         self.rows_staged = 0
         self.rows_merged = 0
         self.rows_invalidated = 0
 
     def write_batch(self, rows: list[dict[str, Any]]) -> int:
-        self._rows.extend(rows)
+        """Stage a batch to disk (string/WKB Parquet). Memory stays at one batch."""
+        if not rows:
+            return 0
+        arrow = self._batch_to_arrow(rows)
+        if self._writer is None:
+            self._writer = pq.ParquetWriter(self._stage_path, arrow.schema)
+        self._writer.write_table(arrow)
         self.rows_staged += len(rows)
         return len(rows)
 
@@ -385,8 +432,14 @@ class IcebergWriteSession:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        if exc_type is None and self._rows:
-            self._flush()
+        try:
+            if self._writer is not None:
+                self._writer.close()
+            if exc_type is None and self.rows_staged:
+                self._flush()
+        finally:
+            if os.path.exists(self._stage_path):
+                os.remove(self._stage_path)
         return False
 
     def _flush(self) -> None:
@@ -395,7 +448,7 @@ class IcebergWriteSession:
         load_id = uuid.uuid4().hex
 
         con = self._engine._duckdb()
-        con.register("incoming", self._incoming_arrow())
+        self._register_incoming(con)
         select_typed = self._typed_select(run_ts, load_id)
 
         if isinstance(self._mode, SCD2):
@@ -403,13 +456,14 @@ class IcebergWriteSession:
         elif isinstance(self._mode, Upsert):
             self._flush_upsert(table, con, select_typed)
         else:  # Append
-            new_rows = con.sql(select_typed).to_arrow_table()
-            if new_rows.num_rows:
-                table.append(new_rows.cast(table.schema().as_arrow()))
-            self.rows_merged = new_rows.num_rows
+            self.rows_merged = self._stream_append(table, con, select_typed)
 
     def _flush_upsert(self, table, con, select_typed: str) -> None:
-        """Insert-or-update keyed by ``Upsert.keys`` via PyIceberg's upsert."""
+        """Insert-or-update keyed by ``Upsert.keys`` via PyIceberg's upsert.
+
+        Unlike the append paths, PyIceberg's ``upsert`` needs the full incoming
+        set in memory to compute matches, so this path is not streamed.
+        """
         new_rows = con.sql(select_typed).to_arrow_table().cast(table.schema().as_arrow())
         if not new_rows.num_rows:
             self.rows_merged = 0
@@ -435,7 +489,7 @@ class IcebergWriteSession:
         con.register("hist", hist)
         join = " and ".join(f't."{k}" = h."{k}"' for k in entity_key)
         partition = ", ".join(f't."{k}"' for k in entity_key)
-        new_rows = con.sql(
+        new_rows_sql = (
             f"with typed as ({select_typed}) "
             f"select * exclude (rn) from ("
             f"  select t.*, row_number() over ("
@@ -445,10 +499,8 @@ class IcebergWriteSession:
             f"  left join hist h on {join} and t.record_hash = h.record_hash "
             f"  where h.record_hash is null"
             f") where rn = 1"
-        ).to_arrow_table()
-        if new_rows.num_rows:
-            table.append(new_rows.cast(table.schema().as_arrow()))
-        self.rows_merged = new_rows.num_rows
+        )
+        self.rows_merged = self._stream_append(table, con, new_rows_sql)
 
         if self._mode.invalidate_missing:
             self.rows_invalidated = self._append_tombstones(run_ts, load_id)
@@ -465,7 +517,7 @@ class IcebergWriteSession:
         entity_key = self._mode.entity_key
         con = self._engine._duckdb()
         con.register("fullhist", table.scan().to_arrow())
-        con.register("incoming", self._incoming_arrow())
+        self._register_incoming(con)
 
         partition = ", ".join(f'"{k}"' for k in entity_key)
         key_join = " and ".join(f'cast(l."{k}" as varchar) = ik."{k}"' for k in entity_key)
@@ -504,21 +556,54 @@ class IcebergWriteSession:
         table.append(tombstones.cast(table.schema().as_arrow()))
         return tombstones.num_rows
 
-    def _incoming_arrow(self) -> pa.Table:
-        """Incoming rows as Arrow: geometry -> WKB binary, everything else string."""
+    def _batch_to_arrow(self, rows: list[dict[str, Any]]) -> pa.Table:
+        """One batch as Arrow: geometry -> WKB binary, everything else string.
+
+        Column set and types come from ``self._schema`` (not the batch), so the
+        Parquet schema is stable across batches even when a row omits a field.
+        """
         geom_cols = set(self._schema.geometry)
         columns: dict[str, pa.Array] = {}
         for col in self._schema.columns:
             if col.name in geom_cols:
-                values = [_to_wkb(r.get(col.name)) for r in self._rows]
+                values = [_to_wkb(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.binary())
             else:
                 values = [
                     None if r.get(col.name) is None else str(r.get(col.name))
-                    for r in self._rows
+                    for r in rows
                 ]
                 columns[col.name] = pa.array(values, type=pa.string())
         return pa.table(columns)
+
+    def _register_incoming(self, con) -> None:
+        """Expose the staged Parquet file to DuckDB as the ``incoming`` view.
+
+        DuckDB reads the file lazily, so the join never holds all incoming rows
+        in memory. The path is engine-controlled (a temp name), not user input.
+        """
+        con.execute(
+            f"create or replace view incoming as "
+            f"select * from read_parquet('{self._stage_path}')"
+        )
+
+    def _stream_append(self, table, con, sql: str) -> int:
+        """Append the result of ``sql`` to ``table`` in bounded-size chunks.
+
+        Streaming the survivors (rather than materializing them all) keeps a
+        flush's peak memory at ~one chunk regardless of dataset size. Each chunk
+        is a separate append (hence a separate data file); ``maintain`` compacts
+        them. Returns the total rows appended.
+        """
+        arrow_schema = table.schema().as_arrow()
+        reader = con.execute(sql).to_arrow_reader(self._engine.STREAM_CHUNK_ROWS)
+        total = 0
+        for batch in reader:
+            if batch.num_rows == 0:
+                continue
+            table.append(pa.Table.from_batches([batch]).cast(arrow_schema))
+            total += batch.num_rows
+        return total
 
     def _typed_select(self, run_ts: datetime, load_id: str) -> str:
         """DuckDB SELECT casting the string/blob incoming rows to typed columns."""

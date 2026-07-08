@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from datadongle.core.cursor import CursorSpec
@@ -277,3 +279,68 @@ def test_invalidate_missing_does_not_double_tombstone(engine):
         ws.write_batch([_rows(permit_="P1")])
     assert ws.rows_invalidated == 0
     assert (engine.read_history(TARGET)["permit_"] == "P2").sum() == 2
+
+
+# ------------------------------------------------------- staging / bounded memory
+
+
+def _data_file_count(engine, target) -> int:
+    return len(list(engine._load(target).scan().plan_files()))
+
+
+def test_streaming_append_writes_in_chunks(engine):
+    """A batch larger than the chunk size streams out over several appends —
+    every row lands, and it produces more than one data file (proof the merge
+    was not materialized whole)."""
+    engine.STREAM_CHUNK_ROWS = 3
+    engine.ensure_table(TARGET, _schema(), SCD2_MODE)
+    rows = [_rows(permit_=f"P{i}", socrata_id=str(i)) for i in range(10)]
+    merged = _write(engine, TARGET, _schema(), SCD2_MODE, rows)
+    assert merged == 10
+    assert set(engine.read_current(TARGET)["permit_"]) == {f"P{i}" for i in range(10)}
+    assert _data_file_count(engine, TARGET) > 1  # chunked, not one big file
+
+
+def test_staging_accumulates_across_write_batches(engine):
+    """Rows staged over several write_batch calls all merge on flush."""
+    engine.ensure_table(TARGET, _schema(), SCD2_MODE)
+    with engine.open_write(TARGET, _schema(), SCD2_MODE) as ws:
+        ws.write_batch([_rows(permit_="P1", socrata_id="1")])
+        ws.write_batch([_rows(permit_="P2", socrata_id="2")])
+        ws.write_batch([_rows(permit_="P3", socrata_id="3")])
+    assert ws.rows_staged == 3
+    assert ws.rows_merged == 3
+    assert set(engine.read_current(TARGET)["permit_"]) == {"P1", "P2", "P3"}
+
+
+def test_staging_file_is_removed_on_clean_exit(engine):
+    engine.ensure_table(TARGET, _schema(), SCD2_MODE)
+    with engine.open_write(TARGET, _schema(), SCD2_MODE) as ws:
+        ws.write_batch([_rows(permit_="P1")])
+        assert os.path.exists(ws._stage_path)  # staged to disk mid-session
+        stage_path = ws._stage_path
+    assert not os.path.exists(stage_path)  # cleaned up after flush
+
+
+def test_staging_file_is_removed_and_merge_skipped_on_error(engine):
+    engine.ensure_table(TARGET, _schema(), SCD2_MODE)
+    stage_path = None
+    with pytest.raises(RuntimeError):
+        with engine.open_write(TARGET, _schema(), SCD2_MODE) as ws:
+            ws.write_batch([_rows(permit_="P1")])
+            stage_path = ws._stage_path
+            raise RuntimeError("boom")
+    assert stage_path is not None and not os.path.exists(stage_path)
+    assert len(engine.read_history(TARGET)) == 0  # error exit wrote nothing
+
+
+def test_custom_staging_dir_is_created_and_used(tmp_path):
+    staging = tmp_path / "scratch"
+    engine = IcebergEngine(str(tmp_path / "warehouse"), staging_dir=str(staging))
+    assert engine.staging_dir == str(staging)
+    assert staging.exists()
+    engine.ensure_table(TARGET, _schema(), SCD2_MODE)
+    with engine.open_write(TARGET, _schema(), SCD2_MODE) as ws:
+        assert os.path.dirname(ws._stage_path) == str(staging)
+        ws.write_batch([_rows(permit_="P1")])
+    assert len(engine.read_current(TARGET)) == 1
