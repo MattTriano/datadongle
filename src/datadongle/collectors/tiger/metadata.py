@@ -29,9 +29,12 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import TYPE_CHECKING
 
 import pandas as pd
-import requests
+
+if TYPE_CHECKING:
+    from datadongle.collectors.tiger.client import TigerClient
 
 logger = logging.getLogger(__name__)
 
@@ -193,15 +196,17 @@ class TigerMetadata:
 
     BASE = "https://www2.census.gov/geo/tiger"
 
-    def __init__(self):
-        self._session = requests.Session()
+    def __init__(self, client: "TigerClient | None" = None):
+        if client is None:
+            from datadongle.collectors.tiger.client import TigerClient
+
+            client = TigerClient()
+        self._client = client
         self.logger = logging.getLogger("tiger_metadata")
 
     def _fetch_directory(self, url: str) -> str:
-        """Fetch an HTML directory listing."""
-        resp = self._session.get(url, timeout=30)
-        resp.raise_for_status()
-        return resp.text
+        """Fetch an HTML directory listing (HTTP owned by the client)."""
+        return self._client.get_text(url)
 
     @staticmethod
     def _parse_directory_links(html: str) -> list[dict]:
