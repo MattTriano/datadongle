@@ -74,9 +74,13 @@ def _schema_name(engine) -> str:
 def _current(engine, target, where=None):
     if isinstance(engine, IcebergEngine):
         df = engine.read_current(target)
-        return df if where is None else df[where(df)]
-    clause = "" if where is None else f" and {where}"
-    return engine.query(f'select * from {target} where "valid_to" is null{clause}')
+    else:
+        df = engine.query(f"select * from {target}")
+        # SCD2 tables carry valid_to; append-only tables don't. When present,
+        # current rows are the open ones; otherwise every row is "current".
+        if "valid_to" in df.columns:
+            df = df[df["valid_to"].isnull()]
+    return df if where is None else df[where(df)]
 
 
 def _history(engine, target):
