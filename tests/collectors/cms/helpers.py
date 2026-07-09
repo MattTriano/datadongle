@@ -3,9 +3,9 @@
 Fakes and test-data helpers for the CMS collector tests.
 
 The boundary that gets faked is HTTP (FakeCMSClient duck-types
-CMSClient); ingestion in the DB-backed tests runs against a real
-Postgres so StagedIngest's actual SCD2 semantics are part of the
-behavior under test.
+CMSClient); ingestion in the driver tests runs through a real Engine —
+a hermetic IcebergEngine on every run, and Postgres when configured —
+so the actual SCD2 semantics are part of the behavior under test.
 """
 
 from __future__ import annotations
