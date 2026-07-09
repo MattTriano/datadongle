@@ -40,6 +40,7 @@ _PG_TYPES: dict[ColumnType, str] = {
     ColumnType.TIMESTAMPTZ: "timestamptz",
     ColumnType.DATE: "date",
     ColumnType.JSON: "jsonb",
+    ColumnType.RASTER: "raster",
 }
 
 # Pipeline columns the engine fills itself (excluded from the staged COPY
@@ -472,6 +473,18 @@ class PostgresEngine:
                 f"create index if not exists ix_{target.name}_current\n"
                 f'    on {fqn} ({ek}) where "valid_to" is null;\n'
             )
+
+        # A raster column gets a GiST index on its convex hull — that is what
+        # serves ST_Intersects(rast, point) sampling. Under SCD2 it is partial
+        # over current rows, since sampling queries filter to them.
+        for name in schema.raster_column_names():
+            ddl += (
+                f"create index if not exists ix_{target.name}_{name}\n"
+                f'    on {fqn} using gist (ST_ConvexHull("{name}"))'
+            )
+            if isinstance(mode, SCD2):
+                ddl += ' where "valid_to" is null'
+            ddl += ";\n"
         return ddl
 
     @staticmethod

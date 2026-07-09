@@ -30,6 +30,7 @@ class ColumnType(str, Enum):
     DATE = "date"
     JSON = "json"
     GEOMETRY = "geometry"
+    RASTER = "raster"
 
 
 @dataclass(frozen=True)
@@ -97,3 +98,12 @@ class TableSchema:
     def metadata_column_names(self) -> set[str]:
         """Names of source-metadata columns (excluded from the SCD2 hash)."""
         return {c.name for c in self.columns if c.metadata}
+
+    def raster_column_names(self) -> set[str]:
+        """Names of raster columns.
+
+        Raster values travel through the pipeline as raster hex-WKB strings.
+        ``PostgresEngine`` lands them in a PostGIS ``raster`` column (parsed on
+        COPY); ``IcebergEngine`` stores the decoded WKB bytes, like geometry.
+        """
+        return {c.name for c in self.columns if c.type is ColumnType.RASTER}

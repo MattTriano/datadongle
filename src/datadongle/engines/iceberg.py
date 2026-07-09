@@ -76,6 +76,7 @@ _ARROW_TYPES: dict[ColumnType, pa.DataType] = {
     ColumnType.TIMESTAMPTZ: pa.timestamp("us", tz="UTC"),
     ColumnType.DATE: pa.date32(),
     ColumnType.GEOMETRY: pa.binary(),
+    ColumnType.RASTER: pa.binary(),
 }
 
 # Neutral column type -> DuckDB cast target (for coercing string input).
@@ -111,6 +112,15 @@ def _to_wkb(value: Any) -> bytes | None:
     except Exception:
         geom = shapely.from_wkb(bytes.fromhex(text))
     return shapely.to_wkb(geom)
+
+
+def _raster_to_bytes(value: Any) -> bytes | None:
+    """Normalize a raster value (hex-WKB string or bytes) to WKB bytes."""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+    return bytes.fromhex(str(value))
 
 
 class IcebergEngine:
@@ -332,7 +342,10 @@ class IcebergEngine:
     ) -> Cursor | None:
         if not self.table_exists(target):
             return None
-        arrow = self._history_arrow(target)
+        # Scan only the cursor column(s): the HWM read must stay cheap even on
+        # tables with huge payload columns (e.g. raster tiles).
+        cols = (cursor.column, cursor.tiebreak) if cursor.tiebreak else (cursor.column,)
+        arrow = self._history_arrow(target, cols)
         if arrow.num_rows == 0:
             return None
         con = self._duckdb()
@@ -525,10 +538,11 @@ class IcebergWriteSession:
 
         ts = run_ts.isoformat()
         proj = []
+        blob_cols = set(self._schema.geometry) | self._schema.raster_column_names()
         for col in self._schema.columns:
             if col.name in entity_key:
                 proj.append(f'l."{col.name}"')
-            elif col.name in self._schema.geometry:
+            elif col.name in blob_cols:
                 proj.append(f'null::blob as "{col.name}"')
             else:
                 proj.append(f'null::{_DUCKDB_CASTS[col.type]} as "{col.name}"')
@@ -557,16 +571,20 @@ class IcebergWriteSession:
         return tombstones.num_rows
 
     def _batch_to_arrow(self, rows: list[dict[str, Any]]) -> pa.Table:
-        """One batch as Arrow: geometry -> WKB binary, everything else string.
+        """One batch as Arrow: geometry/raster -> WKB binary, everything else string.
 
         Column set and types come from ``self._schema`` (not the batch), so the
         Parquet schema is stable across batches even when a row omits a field.
         """
         geom_cols = set(self._schema.geometry)
+        raster_cols = self._schema.raster_column_names()
         columns: dict[str, pa.Array] = {}
         for col in self._schema.columns:
             if col.name in geom_cols:
                 values = [_to_wkb(r.get(col.name)) for r in rows]
+                columns[col.name] = pa.array(values, type=pa.binary())
+            elif col.name in raster_cols:
+                values = [_raster_to_bytes(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.binary())
             else:
                 values = [
@@ -607,10 +625,10 @@ class IcebergWriteSession:
 
     def _typed_select(self, run_ts: datetime, load_id: str) -> str:
         """DuckDB SELECT casting the string/blob incoming rows to typed columns."""
-        geom_cols = set(self._schema.geometry)
+        blob_cols = set(self._schema.geometry) | self._schema.raster_column_names()
         select_cols = []
         for col in self._schema.columns:
-            if col.name in geom_cols:
+            if col.name in blob_cols:
                 select_cols.append(f'"{col.name}"')
             else:
                 cast = _DUCKDB_CASTS[col.type]
@@ -629,12 +647,12 @@ class IcebergWriteSession:
     def _hash_expr(self) -> str:
         """MD5 over the semantic columns (excludes entity_key + metadata cols)."""
         exclude = set(self._mode.entity_key) | self._schema.metadata_column_names()
-        geom_cols = set(self._schema.geometry)
+        blob_cols = set(self._schema.geometry) | self._schema.raster_column_names()
         parts = []
         for col in self._schema.columns:
             if col.name in exclude:
                 continue
-            if col.name in geom_cols:
+            if col.name in blob_cols:
                 parts.append(f"""coalesce(md5("{col.name}"), '')""")
             else:
                 parts.append(f"""coalesce("{col.name}"::varchar, '')""")

@@ -5,8 +5,8 @@ Dataset specification for USGS 3DEP elevation collection.
 A ThreeDEPDatasetSpec declares which region to collect (a BBox), which seamless
 product, and where to land it. One instance per city; the raster lands
 in a per-city table, mirroring the per-city OSM raw tables. SCD2 keying
-is fixed to ["tile_id"] — the raster ingestion path keys every sub-tile
-on its tile_id, so this is not a caller choice.
+is fixed to ["tile_id"] — the reader keys every sub-tile on its tile_id,
+so this is not a caller choice.
 
 Example:
     spec = ThreeDEPDatasetSpec(
@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from datadongle.collectors.base_spec import DatasetSpec
-from datadongle.collectors.threedep.client import SUPPORTED_PRODUCTS
+from datadongle.collectors.threedep.client import SUPPORTED_PRODUCTS, tiles_for_bbox
 from datadongle.geo import BBox
 
 # Native SRID / vertical units of the seamless 3DEP products.
@@ -52,6 +52,11 @@ class ThreeDEPDatasetSpec(DatasetSpec):
     product : str
         Seamless product code: "13" (1/3 arc-second, ~10 m; default) or
         "1" (1 arc-second, ~30 m).
+    tiles : list[str] | None
+        Restrict collection to these 1-degree tiles (each must be one the
+        bbox needs). None (the default) means every tile the bbox touches.
+        This is the narrowing field the family driver uses to collect one
+        tile per write session; users normally leave it None.
     entity_key : list[str]
         Fixed to ["tile_id"]; overriding raises.
     """
@@ -62,6 +67,7 @@ class ThreeDEPDatasetSpec(DatasetSpec):
     target_schema: str = "raw_data"
     bbox: BBox | None = None
     product: str = "13"
+    tiles: list[str] | None = None
     entity_key: list[str] = field(default_factory=lambda: list(_RASTER_ENTITY_KEY))
 
     @property
@@ -87,9 +93,17 @@ class ThreeDEPDatasetSpec(DatasetSpec):
                 f"got {self.entity_key}"
             )
         if self.bbox.srid != THREEDEP_SRID:
-            # Not fatal — the collector could transform — but for 3DEP the
+            # Not fatal — the reader could transform — but for 3DEP the
             # tiles are 4269 and a mismatched bbox would mis-clip, so flag it.
             raise ValueError(
                 f"bbox.srid is {self.bbox.srid}; 3DEP tiles are EPSG:{THREEDEP_SRID}. "
                 f"Provide the bbox in NAD83 so tile selection and clipping line up."
             )
+        if self.tiles is not None:
+            needed = set(tiles_for_bbox(self.bbox))
+            unknown = sorted(set(self.tiles) - needed)
+            if unknown:
+                raise ValueError(
+                    f"tiles {unknown} are not among the tiles this bbox needs "
+                    f"({sorted(needed)}); a tile outside the bbox would clip to nothing."
+                )
