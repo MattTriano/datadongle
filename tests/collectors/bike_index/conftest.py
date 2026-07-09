@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from datadongle.collectors.bike_index.client import BikeIndexClient
-from datadongle.collectors.bike_index.collector import BikeIndexCollector
+from datadongle.collectors.bike_index.reader import BikeIndexReader
 from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
 # ------------------------------------------------------------------ #
@@ -94,36 +94,10 @@ def spec():
 
 
 @pytest.fixture
-def mock_stager():
-    """A mock StagedIngest context manager that tracks write_batch calls."""
-    stager = MagicMock()
-    stager.rows_staged = 0
-    stager.rows_merged = 0
-    stager._batches = []
-
-    def _write_batch(batch):
-        stager._batches.append(list(batch))
-        stager.rows_staged += len(batch)
-        stager.rows_merged += len(batch)
-
-    stager.write_batch = MagicMock(side_effect=_write_batch)
-    stager.__enter__ = MagicMock(return_value=stager)
-    stager.__exit__ = MagicMock(return_value=False)
-    return stager
-
-
-@pytest.fixture
-def mock_engine(mock_stager):
-    engine = MagicMock()
-    engine.staged_ingest.return_value = mock_stager
-    return engine
-
-
-@pytest.fixture
 def mock_client():
     return MagicMock(spec=BikeIndexClient)
 
 
 @pytest.fixture
-def collector(mock_client, mock_engine):
-    return BikeIndexCollector(client=mock_client, engine=mock_engine)
+def reader(mock_client):
+    return BikeIndexReader(client=mock_client)
