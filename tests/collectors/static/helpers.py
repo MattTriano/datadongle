@@ -1,34 +1,40 @@
-"""
-Fakes and test-data helpers for the static collector suite.
+"""Fakes and test-data helpers for the static collector suite.
 
-FakeStaticFileClient overrides only download(), serving bytes from an
-in-memory {url: bytes} mapping — so iter_rows, CSV/XLSX parsing, column
-sanitization, and encoding handling all run the real code paths with no
-HTTP involved.
+FakeStaticFileClient overrides only ``download_to_tempfile`` — writing bytes from
+an in-memory ``{url: bytes}`` mapping to a temp file — so parse_file, CSV/XLSX
+parsing, column sanitization, and encoding handling all run the real code paths
+with no HTTP involved.
 """
 
 from __future__ import annotations
 
 import io
+import tempfile
+from pathlib import Path
 
 from datadongle.collectors.static.client import StaticFileClient, StaticFileDownloadError
 from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
 
 
 class FakeStaticFileClient(StaticFileClient):
-    """Serves bytes from memory; records which URLs were requested."""
+    """Serves bytes from memory (via a temp file); records requested URLs."""
 
     def __init__(self, files: dict[str, bytes]):
         super().__init__(delay_seconds=0)
         self.files = dict(files)
         self.downloads: list[str] = []
+        self.fail_urls: set[str] = set()
 
-    def download(self, url: str) -> bytes:
+    def download_to_tempfile(self, url: str, suffix: str = ".download") -> Path:
         self.downloads.append(url)
-        try:
-            return self.files[url]
-        except KeyError:
+        if url in self.fail_urls:
+            raise ConnectionError(f"Injected download failure for {url}")
+        if url not in self.files:
             raise StaticFileDownloadError(f"FakeStaticFileClient has no bytes for {url}")
+        tmp = tempfile.NamedTemporaryFile(suffix=suffix, prefix="static_fake_", delete=False)
+        tmp.write(self.files[url])
+        tmp.close()
+        return Path(tmp.name)
 
 
 def csv_bytes(header: list[str], rows: list[list[str]], encoding: str = "utf-8") -> bytes:
@@ -51,15 +57,15 @@ def xlsx_bytes(header: list[str], rows: list[list]) -> bytes:
     return buf.getvalue()
 
 
-# Default tiny source: two health systems, one with a leading-zero id,
-# one with a cp1252 en dash (0x96) in its name when encoded.
+# Default tiny source: two health systems, one with a leading-zero id, one with
+# a cp1252 en dash (0x96) in its name when encoded.
 DEFAULT_URL_2023 = "https://example.test/systems-2023.csv"
 DEFAULT_URL_2022 = "https://example.test/systems-2022.csv"
 
 DEFAULT_HEADER = ["sys_id", "sys_name", "beds"]
 DEFAULT_ROWS_2023 = [
     ["0895", "Adena Health System", "298"],
-    ["1001", "Example Health \u2013 Metro", "512"],
+    ["1001", "Example Health – Metro", "512"],
 ]
 DEFAULT_ROWS_2022 = [
     ["0895", "Adena Health System", "290"],
@@ -73,8 +79,8 @@ def default_files() -> dict[str, bytes]:
     }
 
 
-def make_spec(schema: str, **overrides) -> StaticFileDatasetSpec:
-    """Build a spec against the test schema with sensible defaults."""
+def make_spec(schema: str = "raw_data", **overrides) -> StaticFileDatasetSpec:
+    """Build a spec against the given schema with sensible defaults."""
     defaults = dict(
         name="test_static_systems",
         target_table="test_static_systems",
