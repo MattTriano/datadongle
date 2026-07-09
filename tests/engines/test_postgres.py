@@ -109,6 +109,39 @@ def test_ensure_table_append_has_no_scd2_apparatus(engine, mock_cursor):
     assert "create index" not in sql
 
 
+def test_ensure_table_raster_column_gets_convex_hull_index(engine, mock_cursor):
+    schema = TableSchema(
+        columns=[
+            Column("tile_id", ColumnType.TEXT, nullable=False),
+            Column("rast", ColumnType.RASTER, nullable=False, metadata=True),
+            Column("checksum", ColumnType.TEXT),
+        ]
+    )
+    engine.ensure_table(
+        TableRef("elevation", "raw_data"), schema, SCD2(entity_key=["tile_id"])
+    )
+    sql = _executed_sql(mock_cursor)
+
+    assert '"rast" raster not null' in sql
+    # The GiST convex-hull index that serves ST_Intersects sampling, partial
+    # over current rows under SCD2.
+    assert (
+        'on raw_data.elevation using gist (ST_ConvexHull("rast")) where "valid_to" is null'
+        in sql
+    )
+
+
+def test_ensure_table_raster_index_is_full_without_scd2(engine, mock_cursor):
+    schema = TableSchema(
+        columns=[Column("rast", ColumnType.RASTER)]
+    )
+    engine.ensure_table(TableRef("tiles", "raw_data"), schema, Append())
+    sql = _executed_sql(mock_cursor)
+
+    assert 'using gist (ST_ConvexHull("rast"));' in sql
+    assert "valid_to" not in sql
+
+
 def test_ensure_table_defaults_namespace_to_public(engine, mock_cursor):
     engine.ensure_table(
         TableRef("t"), TableSchema(columns=[Column("id", ColumnType.TEXT)]), Append()

@@ -3,9 +3,8 @@
 Fakes and test-data helpers for the 3DEP collector tests.
 
 The boundary that gets faked is HTTP (FakeThreeDEPClient duck-types
-ThreeDEPClient); ingestion in the DB-backed tests runs against a real
-Postgres so StagedIngest's actual SCD2 semantics and the raster
-COPY/ST_Value path are part of the behavior under test.
+ThreeDEPClient); the driver tests run the real tiling/SCD2 paths against
+a hermetic IcebergEngine (and a real Postgres when one is configured).
 
 A "source" here is the set of 1-degree tiles USGS has staged. Each
 served tile is a small synthetic GeoTIFF georeferenced to that tile's

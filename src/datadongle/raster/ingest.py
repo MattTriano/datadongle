@@ -1,30 +1,21 @@
 # /loci_platform/platform/airflow/dags/loci/raster/ingest.py
 """
-Ingest a local raster file into a PostGIS `raster` table via StagedIngest.
+Tile a local raster file into ingest-ready sub-tiles.
 
-The flow mirrors the OSM collector: a reader yields row dicts, the
-orchestrator batches them into engine.staged_ingest in SCD2 mode. The
-only thing that makes this a *raster* ingest is that one column (`rast`)
-carries a PostGIS raster hex-WKB string instead of a scalar; PostGIS
-parses it on COPY exactly as it parses geometry WKT.
+``iter_tiles`` walks a GDAL-readable raster with rasterio windowed reads —
+one sub-tile at a time, so peak memory is one tile, not the whole file. This
+is why download-to-file-then-tile is the right shape: rasterio reads windows
+from the file on disk; we never hold the full raster in memory.
 
-Design choices, in keeping with the rest of the platform:
+Each ``RasterTile`` carries the sub-tile as a PostGIS raster hex-WKB string
+(PostGIS parses it on COPY exactly as it parses geometry WKT; IcebergEngine
+stores the decoded WKB bytes) plus a cheap ``checksum`` (md5 of the tile's raw
+bytes + georeference). The checksum is what SCD2 change detection hashes —
+hashing the multi-hundred-KB raster value itself on every row would be
+wasteful.
 
-- We tile in Python with rasterio windowed reads, one tile at a time, so
-  peak memory is one tile, not the whole file. This is why download-to-
-  file-then-ingest is the right shape: rasterio reads windows from the
-  file on disk; we never hold the full raster in memory.
-
-- SCD2 keys on `tile_id` (stable across runs for the same geographic
-  tile) and detects change via a cheap `checksum` column (md5 of the
-  tile's raw bytes). `rast` itself is excluded from the hash — hashing
-  the multi-hundred-KB raster text on every row would be wasteful, and
-  the checksum already captures content change.
-
-- generate_ddl is built per source-collector elsewhere (as with OSM and
-  CMS); raster_table_ddl is the shared helper those collectors call so
-  the column set and the GiST index on ST_ConvexHull(rast) stay
-  consistent.
+The storage half lives in the engines: a reader (see the 3DEP collector)
+turns these tiles into rows and the shared load path stages and merges them.
 
 A `raster` table is the natural fit for downstream sampling:
 
@@ -33,8 +24,8 @@ A `raster` table is the natural fit for downstream sampling:
     from   <raster_table> r
     join   nodes n on ST_Intersects(r.rast, n.geom);
 
-The ST_Intersects is served by the GiST index, so each node resolves to
-its one tile.
+The ST_Intersects is served by the GiST index the engine creates, so each
+node resolves to its one tile.
 """
 
 from __future__ import annotations
@@ -43,7 +34,6 @@ import hashlib
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import rasterio
@@ -53,16 +43,6 @@ from rasterio.windows import Window
 logger = logging.getLogger(__name__)
 
 DEFAULT_TILE_SIZE = 256
-
-# Columns the database fills in (SCD2 bookkeeping); excluded from the
-# COPY column list by StagedIngest.
-METADATA_COLUMNS: set[str] = {"record_hash", "valid_from", "valid_to"}
-
-# Excluded from the record hash. `rast` is excluded because `checksum`
-# already carries the content-change signal far more cheaply than
-# hashing the raster text. `ingested_at` is excluded so re-runs don't
-# spuriously version every tile.
-HASH_EXCLUDE_COLUMNS: set[str] = METADATA_COLUMNS | {"rast", "ingested_at"}
 
 
 @dataclass(frozen=True)
@@ -173,116 +153,6 @@ def iter_tiles(
 def _intersects(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
     """True if two (min_x, min_y, max_x, max_y) extents overlap (touching counts)."""
     return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
-
-
-def tile_to_row(tile: RasterTile, ingested_at: Any) -> dict[str, Any]:
-    """Turn a RasterTile into a staged_ingest row dict."""
-    return {
-        "tile_id": tile.tile_id,
-        "rast": tile.rast_hexwkb,
-        "checksum": tile.checksum,
-        "srid": tile.srid,
-        "min_x": tile.min_x,
-        "min_y": tile.min_y,
-        "max_x": tile.max_x,
-        "max_y": tile.max_y,
-        "ingested_at": ingested_at,
-    }
-
-
-def raster_table_ddl(target_schema: str, target_table: str, srid: int) -> str:
-    """
-    CREATE TABLE plus constraint/index DDL for a raster tile table.
-
-    The shape mirrors the OSM/CMS DDL: data columns, SCD2 metadata
-    columns, the (entity_key, record_hash) uniqueness constraint, a
-    partial current-rows index, and — the raster-specific part — a GiST
-    index on ST_ConvexHull(rast) restricted to current rows, which is
-    what makes ST_Intersects(rast, point) sampling fast.
-
-    No AddRasterConstraints call: the strict srid/scale/alignment
-    constraints are optional, add friction to SCD2 inserts, and are not
-    needed for ST_Value sampling. Add them later if a coverage-level
-    invariant becomes useful.
-    """
-    fqn = f"{target_schema}.{target_table}"
-    ek = '"tile_id"'
-
-    lines = [
-        f"create table if not exists {fqn} (",
-        '    "tile_id" text not null,',
-        '    "rast" raster not null,',
-        '    "checksum" text not null,',
-        '    "srid" integer not null,',
-        '    "min_x" double precision,',
-        '    "min_y" double precision,',
-        '    "max_x" double precision,',
-        '    "max_y" double precision,',
-        "    \"ingested_at\" timestamptz not null default (now() at time zone 'UTC'),",
-        '    "record_hash" text not null,',
-        "    \"valid_from\" timestamptz not null default (now() at time zone 'UTC'),",
-        '    "valid_to" timestamptz',
-        ");",
-        "",
-        f"alter table {fqn}",
-        f"    add constraint uq_{target_table}_entity_hash",
-        f'    unique ({ek}, "record_hash");',
-        "",
-        f"create index if not exists ix_{target_table}_current",
-        f"    on {fqn} ({ek})",
-        '    where "valid_to" is null;',
-        "",
-        f"create index if not exists ix_{target_table}_rast",
-        f"    on {fqn} using gist (ST_ConvexHull(rast))",
-        '    where "valid_to" is null;',
-    ]
-    return "\n".join(lines)
-
-
-def ingest_raster_file(
-    engine: Any,
-    path: str,
-    *,
-    source_id: str,
-    target_schema: str,
-    target_table: str,
-    ingested_at: Any,
-    tile_size: int = DEFAULT_TILE_SIZE,
-    batch_size: int = 32,
-    bounds: tuple[float, float, float, float] | None = None,
-) -> dict[str, int]:
-    """
-    Tile a local raster and SCD2-merge its tiles into the target table.
-
-    Returns a small summary dict. batch_size is intentionally low: each
-    raster tile is a large COPY field, so a handful per batch keeps the
-    staging buffer modest. `bounds` (in the raster's CRS) clips the tiles
-    to a region of interest; see iter_tiles.
-    """
-    rows: list[dict[str, Any]] = []
-    tiles_read = 0
-
-    with engine.staged_ingest(
-        target_table=target_table,
-        target_schema=target_schema,
-        entity_key=["tile_id"],
-        metadata_columns=METADATA_COLUMNS,
-        hash_exclude_columns=HASH_EXCLUDE_COLUMNS,
-    ) as stager:
-        for tile in iter_tiles(path, source_id=source_id, tile_size=tile_size, bounds=bounds):
-            rows.append(tile_to_row(tile, ingested_at))
-            tiles_read += 1
-            if len(rows) >= batch_size:
-                stager.write_batch(rows)
-                rows = []
-        if rows:
-            stager.write_batch(rows)
-
-    return {
-        "tiles_read": tiles_read,
-        "rows_staged": stager.rows_staged,
-        "rows_merged": stager.rows_merged,
-    }
 
 
 def _resolve_srid(ds: rasterio.DatasetReader) -> int:

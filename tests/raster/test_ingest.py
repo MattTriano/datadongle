@@ -1,29 +1,19 @@
 """
 Unit tests for datadongle.raster.ingest.
 
-Tiling and row/DDL building are exercised against a synthetic GeoTIFF
-written to a tmp path. The staged_ingest orchestration is exercised with
-a stub engine, so these stay offline — no PostGIS required. The live
-COPY/ST_Value behavior is covered in test_raster_postgis.py.
+Tiling is exercised against a synthetic GeoTIFF written to a tmp path,
+so these stay offline — no PostGIS required. The live raster COPY /
+ST_Value behavior is covered by the 3DEP driver tests' Postgres arm.
 """
 
 from __future__ import annotations
 
-import re
 import struct
-from contextlib import contextmanager
-from datetime import UTC, datetime
 
 import numpy as np
 import pytest
 import rasterio
-from datadongle.raster.ingest import (
-    HASH_EXCLUDE_COLUMNS,
-    ingest_raster_file,
-    iter_tiles,
-    raster_table_ddl,
-    tile_to_row,
-)
+from datadongle.raster.ingest import iter_tiles
 from rasterio.transform import from_origin
 
 # Synthetic DEM geometry: 600 rows x 500 cols, 10 m, north-up, NAD83.
@@ -164,99 +154,50 @@ def test_checksum_changes_when_a_pixel_changes(tmp_path):
 
 
 # --------------------------------------------------------------------------
-# Row schema vs DDL  (guards against drift between the two)
-# --------------------------------------------------------------------------
-
-DB_MANAGED = {"record_hash", "valid_from", "valid_to"}
-
-
-def test_row_keys_match_ddl_data_columns(dem_path):
-    path, _ = dem_path
-    tile = next(iter_tiles(path, source_id="c", tile_size=256))
-    row = tile_to_row(tile, ingested_at=datetime.now(UTC))
-
-    ddl = raster_table_ddl("raw_data", "c_elevation", SRID)
-    # Column names are the first quoted token on each definition line.
-    ddl_cols = set(re.findall(r'^\s*"([a-z_]+)"', ddl, flags=re.MULTILINE))
-    data_cols = ddl_cols - DB_MANAGED
-
-    assert set(row.keys()) == data_cols
-
-
-def test_ddl_has_raster_column_and_convex_hull_index():
-    ddl = raster_table_ddl("raw_data", "toronto_elevation", 3979)
-    assert '"rast" raster not null' in ddl
-    assert "using gist (ST_ConvexHull(rast))" in ddl
-    assert 'unique ("tile_id", "record_hash")' in ddl
-    assert 'where "valid_to" is null' in ddl
-
-
-# --------------------------------------------------------------------------
-# Orchestration  (stub engine — verifies SCD2 wiring without a database)
+# Bounds clip filter
 # --------------------------------------------------------------------------
 
 
-class _StubStager:
-    def __init__(self, **kw):
-        self.kw = kw
-        self.batch_sizes = []
-        self.rows_staged = 0
-        self.rows_merged = 0
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        self.rows_merged = self.rows_staged
-        return False
-
-    def write_batch(self, rows):
-        self.batch_sizes.append(len(rows))
-        self.rows_staged += len(rows)
-
-
-class _StubEngine:
-    def __init__(self):
-        self.last = None
-
-    @contextmanager
-    def staged_ingest(self, **kw):
-        self.last = _StubStager(**kw)
-        yield self.last
-
-
-def test_ingest_passes_scd2_config(dem_path):
-    path, _ = dem_path
-    eng = _StubEngine()
-    ingest_raster_file(
-        eng,
+@pytest.fixture
+def small_dem(tmp_path):
+    # 100x100 at 0.01 deg, origin (-88, 42) north-up -> covers lon [-88,-87], lat [41,42]
+    arr = np.arange(100 * 100, dtype=np.float32).reshape(100, 100)
+    path = tmp_path / "d.tif"
+    with rasterio.open(
         path,
-        source_id="c",
-        target_schema="raw_data",
-        target_table="c_elevation",
-        ingested_at=datetime.now(UTC),
-    )
-    assert eng.last.kw["entity_key"] == ["tile_id"]
-    assert eng.last.kw["hash_exclude_columns"] == HASH_EXCLUDE_COLUMNS
-    assert "rast" in eng.last.kw["hash_exclude_columns"]
+        "w",
+        driver="GTiff",
+        height=100,
+        width=100,
+        count=1,
+        dtype="float32",
+        crs="EPSG:4269",
+        transform=from_origin(-88.0, 42.0, 0.01, 0.01),
+    ) as d:
+        d.write(arr, 1)
+    return str(path)
 
 
-def test_ingest_batches_and_counts(dem_path):
-    path, _ = dem_path
-    eng = _StubEngine()
-    summary = ingest_raster_file(
-        eng,
-        path,
-        source_id="c",
-        target_schema="raw_data",
-        target_table="c_elevation",
-        ingested_at=datetime.now(UTC),
-        tile_size=256,
-        batch_size=4,
-    )
-    assert summary["tiles_read"] == 6
-    assert summary["rows_staged"] == 6
-    assert eng.last.batch_sizes == [4, 2]  # 6 tiles, batch of 4
+def test_bounds_keeps_only_intersecting_tiles(small_dem):
+    all_tiles = list(iter_tiles(small_dem, source_id="d", tile_size=25))
+    assert len(all_tiles) == 16  # 4x4 grid of 25px tiles
+
+    # Clip to the top-left quarter of the raster's extent.
+    clip = (-88.0, 41.75, -87.75, 42.0)  # min_x, min_y, max_x, max_y
+    clipped = list(iter_tiles(small_dem, source_id="d", tile_size=25, bounds=clip))
+
+    assert 0 < len(clipped) < len(all_tiles)
+    # Every returned tile actually intersects the clip extent.
+    for t in clipped:
+        assert not (
+            t.max_x < clip[0] or t.min_x > clip[2] or t.max_y < clip[1] or t.min_y > clip[3]
+        )
+
+
+def test_bounds_none_is_unfiltered(small_dem):
+    a = list(iter_tiles(small_dem, source_id="d", tile_size=25))
+    b = list(iter_tiles(small_dem, source_id="d", tile_size=25, bounds=None))
+    assert len(a) == len(b) == 16
 
 
 # --------------------------------------------------------------------------
