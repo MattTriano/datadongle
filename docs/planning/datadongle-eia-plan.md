@@ -4,7 +4,9 @@ Working notes for building a US EIA (Energy Information Administration) energy-d
 
 ## Where we are
 
-**Built and passing** (2026-07-09). All design decisions locked; API facts confirmed against eia.gov. The collector ships `spec.py`, `client.py`, `reader.py`, `README.md` under `src/datadongle/collectors/eia/` and a test suite under `tests/collectors/eia/` (`test_spec.py`, `test_client.py`, `test_reader.py`, `helpers.py`). 25 EIA tests pass; the full hermetic suite is green (746 passed, 53 skipped) with no regressions; ruff + ty clean. No `metadata.py` and no `driver.py` (single-table-per-spec on the shared `run_collection`, as decided).
+**Built and passing** (2026-07-09), on branch `feat/datadongle-eia`. All design decisions locked; API facts confirmed against eia.gov. The collector ships `spec.py`, `client.py`, `reader.py`, `metadata.py`, `README.md` under `src/datadongle/collectors/eia/` and a test suite under `tests/collectors/eia/` (`test_spec.py`, `test_client.py`, `test_reader.py`, `test_metadata.py`, `helpers.py`). 38 EIA tests pass; ruff + ty clean; no full-suite regressions. No `driver.py` (single-table-per-spec on the shared `run_collection`, as decided).
+
+`metadata.py` (`EIAMetadata`) was added after the initial collector-only cut, at the user's request — a route-tree explorer (`browse`/`describe`/`frequencies`/`columns`/`facets`/`facet_values`/`search`) returning DataFrames like `FredMetadata`. So decision 3 below ("collector only") was revisited: the explorer now ships.
 
 Env note after the image rebuild: `uv run` can't rebuild the project offline (no cached `hatchling`). The in-repo `.venv` works once its dangling interpreter references are repaired — its `bin/python` symlink and `pyvenv.cfg` `home` were repointed to `/opt/uv/python/cpython-3.13.14-linux-x86_64-gnu`. Run tests with `/workspace/.venv/bin/python -m pytest` (pytest's `pythonpath=["src"]` handles the import; the editable `.pth` still points at the old `/home/matt` path but is unused).
 
