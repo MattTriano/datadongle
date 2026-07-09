@@ -101,6 +101,14 @@ class EIAClient:
         payload = self._get(f"{route_path.strip('/')}/", {})
         return payload["response"]
 
+    def get_facet_values(self, route_path: str, facet_id: str) -> list[dict]:
+        """Return the valid values for a facet (to fill a spec's ``facets``).
+
+        Each entry is typically ``{"id": ..., "name"/"alias": ...}``.
+        """
+        payload = self._get(f"{route_path.strip('/')}/facet/{facet_id}/", {})
+        return payload["response"].get("facets", [])
+
     # -- data ------------------------------------------------------------
 
     @staticmethod

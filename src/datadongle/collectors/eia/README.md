@@ -46,6 +46,23 @@ The incremental cursor is `period`. An `incremental` run reads the target's max 
 
 EIA **revises** historical values, and rows carry no per-row "updated" timestamp, so the `period` cursor cannot see a changed value in an already-collected period. Schedule a periodic `mode="full"` refresh to pick up revisions: under SCD2 an unchanged re-pull is a no-op, and a revised value appends exactly one new version for the affected entity.
 
-## Choosing a spec's fields
+## Discovering datasets — `EIAMetadata`
 
-`EIAClient.get_route_metadata("electricity/retail-sales")` returns the route's available frequencies, facets, and measure (`data`) columns — the values you fill into a spec. There is no separate metadata explorer for EIA yet; add one if interactive discovery becomes a need.
+The API has no flat catalog or search endpoint; datasets live in a tree of routes. `EIAMetadata` walks that tree so you can find a series and read off the values a spec needs:
+
+```python
+from datadongle.collectors.eia.metadata import EIAMetadata
+
+m = EIAMetadata()                          # reads EIA_API_KEY from the environment
+
+m.browse()                                 # top categories (electricity, natural-gas, …)
+m.browse("electricity")                    # child routes, each with a full `path`
+m.describe("electricity/retail-sales")     # a leaf's full metadata
+m.frequencies("electricity/retail-sales")  # → a spec's `frequency`
+m.columns("electricity/retail-sales")      # measure columns → `data_columns` (with units)
+m.facets("electricity/retail-sales")       # filterable dimensions → keys of `facets`
+m.facet_values("electricity/retail-sales", "stateid")   # → values of `facets`
+m.search("retail sales", max_depth=1)      # walk the tree for matching routes
+```
+
+`browse`/`columns`/`facets`/`search` return DataFrames for notebook display. `search` has no server-side support — it issues one request per internal node visited, so keep `max_depth` small.

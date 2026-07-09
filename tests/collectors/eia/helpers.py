@@ -73,6 +73,92 @@ class FakeEIAClient(EIAClient):
         }
 
 
+class FakeEIAMetadataClient(EIAClient):
+    """Serves canned route metadata / facet values by path (no HTTP).
+
+    Overrides the two public methods ``EIAMetadata`` calls, so route-tree
+    parsing and the search walk run the real code against a fixed tree.
+    """
+
+    def __init__(
+        self,
+        routes: dict[str, dict],
+        facet_values: dict[tuple[str, str], list[dict]] | None = None,
+    ):
+        super().__init__(api_key="test-key")
+        self.routes = routes
+        self.facet_values = facet_values or {}
+        self.requests: list[str] = []
+
+    def get_route_metadata(self, route_path: str) -> dict:
+        key = route_path.strip("/")
+        self.requests.append(key)
+        if key not in self.routes:
+            raise KeyError(f"FakeEIAMetadataClient has no metadata for {key!r}")
+        return self.routes[key]
+
+    def get_facet_values(self, route_path: str, facet_id: str) -> list[dict]:
+        key = route_path.strip("/")
+        self.requests.append(f"{key}/facet/{facet_id}")
+        return self.facet_values.get((key, facet_id), [])
+
+
+# A tiny route tree: root → electricity/natural-gas → electricity/retail-sales
+# (a leaf carrying frequency/facets/data).
+ROUTE_TREE = {
+    "": {
+        "id": "",
+        "routes": [
+            {"id": "electricity", "name": "Electricity", "description": "power data"},
+            {"id": "natural-gas", "name": "Natural Gas", "description": "gas data"},
+        ],
+    },
+    "electricity": {
+        "id": "electricity",
+        "name": "Electricity",
+        "routes": [
+            {
+                "id": "retail-sales",
+                "name": "Electricity Sales to Ultimate Customers",
+                "description": "monthly retail sales, revenue, price by state/sector",
+            },
+        ],
+    },
+    "electricity/retail-sales": {
+        "id": "retail-sales",
+        "name": "Electricity Sales to Ultimate Customers",
+        "description": "retail sales of electricity",
+        "frequency": [
+            {
+                "id": "monthly",
+                "description": "Monthly",
+                "query": "M",
+                "format": "YYYY-MM",
+            },
+            {"id": "annual", "description": "Annual", "query": "A", "format": "YYYY"},
+        ],
+        "facets": [
+            {"id": "stateid", "description": "State / Census Region"},
+            {"id": "sectorid", "description": "Sector"},
+        ],
+        "data": {
+            "price": {"alias": "Average Price", "units": "cents per kilowatthour"},
+            "revenue": {"alias": "Revenue", "units": "million dollars"},
+        },
+        "startPeriod": "2001-01",
+        "endPeriod": "2024-01",
+    },
+    "natural-gas": {"id": "natural-gas", "name": "Natural Gas", "routes": []},
+}
+
+FACET_VALUES = {
+    ("electricity/retail-sales", "stateid"): [
+        {"id": "CO", "name": "Colorado"},
+        {"id": "CA", "name": "California"},
+    ],
+}
+
+
 def make_spec(schema: str = "raw_data", **overrides) -> EIADatasetSpec:
     """Build a spec against the given schema with sensible defaults."""
     defaults = dict(
