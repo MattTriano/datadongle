@@ -49,6 +49,18 @@ CURSOR_COLUMN = "period"
 _NON_IDENT = re.compile(r"[^a-z0-9]+")
 
 
+def normalize_column_name(name: str) -> str:
+    """Lowercase and collapse non-alphanumerics to ``_`` (queryable unquoted).
+
+    So ``stateDescription`` → ``statedescription``, ``price-units`` →
+    ``price_units``. A leading BOM (some sources prepend ``\\ufeff``) is
+    non-alphanumeric, so the regex maps it to ``_`` and ``strip("_")`` drops it —
+    no special case. Shared with :mod:`datadongle.collectors.eia.builder` so a
+    derived ``entity_key`` matches the reader's output column names exactly.
+    """
+    return _NON_IDENT.sub("_", name.strip().lower()).strip("_")
+
+
 class EIAReader:
     """Adapts one EIA API v2 data series to the shared collection driver."""
 
@@ -228,9 +240,5 @@ class EIAReader:
 
     @staticmethod
     def _normalize(name: str) -> str:
-        """Lowercase and collapse non-alphanumerics to ``_`` (queryable unquoted).
-
-        A leading BOM (some sources prepend ``\\ufeff``) is non-alphanumeric, so
-        the regex maps it to ``_`` and ``strip("_")`` drops it — no special case.
-        """
-        return _NON_IDENT.sub("_", name.strip().lower()).strip("_")
+        """Normalize a column name (see :func:`normalize_column_name`)."""
+        return normalize_column_name(name)

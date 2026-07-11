@@ -66,3 +66,33 @@ m.search("retail sales", max_depth=1)      # walk the tree for matching routes
 ```
 
 `browse`/`columns`/`facets`/`search` return DataFrames for notebook display. `search` has no server-side support — it issues one request per internal node visited, so keep `max_depth` small.
+
+## Building a spec — `EIASpecBuilder`
+
+Most spec fields are just a route's own metadata copied by hand — and the SCD2 `entity_key` is especially error-prone because its names must match the reader's *normalized* output columns. `EIASpecBuilder` reads a route's metadata once, then **fills** whatever you omit and **validates** whatever you pass, so a typo fails at build time (with the valid options listed) instead of deep in a collection run:
+
+```python
+from datadongle.collectors.eia.builder import EIASpecBuilder
+
+b = EIASpecBuilder()                       # reads EIA_API_KEY from the environment
+
+spec = b.build(
+    "electricity/retail-sales",
+    facets={"stateid": ["CO"], "sectorid": ["RES"]},   # validated against the route
+)
+# Filled in from the route's metadata:
+#   frequency     → the route's sole frequency (raises, listing them, if several)
+#   data_columns  → every measure the route exposes
+#   entity_key    → the route's facet-id columns + "period"  (⇒ SCD2 history)
+#   name/target_table → eia_electricity_retail_sales_monthly
+```
+
+What the builder does with each argument:
+
+- **`frequency`** — omit it to use the route's only frequency; passing an unoffered one (or omitting it when several exist) raises with the valid list.
+- **`data_columns`** — omit to pull every measure; an unknown measure raises.
+- **`facets`** — an unknown facet *key* raises. Pass `check_facet_values=True` to also validate each *value* (one extra request per facet).
+- **`entity_key`** — omit to derive the SCD2 grain (facet-id columns + `period`); pass `entity_key=None` to opt out of history (Append); pass a list to set it yourself.
+- **`name`/`target_table`/`target_schema`/`start`/`end`** — optional overrides; the name/table default to `eia_<route>_<frequency>`.
+
+For an interactive starting point in a notebook, `print(b.template("electricity/retail-sales"))` returns a fully-populated, editable `EIADatasetSpec(...)` snippet — every measure (with units), the frequencies, the facet keys, and the period range laid out as comments to copy and trim.
