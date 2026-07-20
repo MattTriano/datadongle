@@ -41,6 +41,10 @@ BASE_URL = "https://api.eia.gov/v2"
 MAX_PAGE_SIZE = 5000
 
 
+class EIAError(requests.RequestException):
+    """EIA request failed; API key scrubbed from the message."""
+
+
 class EIAClient:
     """Thin ``requests`` wrapper for the EIA API v2.
 
@@ -80,14 +84,34 @@ class EIAClient:
         )
         self.session.mount("https://", HTTPAdapter(max_retries=retry))
 
+    def _scrub(self, text: str) -> str:
+        """Replace the API key with a placeholder wherever it appears."""
+        if self.api_key and self.api_key in text:
+            text = text.replace(self.api_key, "<api_key>")
+        return text
+
     def _get(self, path: str, params: Mapping[str, Any]) -> dict:
-        """GET ``<BASE_URL>/<path>`` with ``api_key`` injected; return JSON."""
         url = f"{BASE_URL}/{path.lstrip('/')}"
         clean = {k: v for k, v in params.items() if v is not None}
         clean["api_key"] = self.api_key
-        resp = self.session.get(url, params=clean, timeout=self.timeout)
-        resp.raise_for_status()
-        return resp.json()
+        try:
+            resp = self.session.get(url, params=clean, timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as err:
+            # Scrub the response URL too, so err.response.url is also safe.
+            if (resp := getattr(err, "response", None)) is not None:
+                resp.url = self._scrub(resp.url)
+            raise EIAError(self._scrub(str(err)), response=resp) from None
+
+    # def _get(self, path: str, params: Mapping[str, Any]) -> dict:
+    #     """GET ``<BASE_URL>/<path>`` with ``api_key`` injected; return JSON."""
+    #     url = f"{BASE_URL}/{path.lstrip('/')}"
+    #     clean = {k: v for k, v in params.items() if v is not None}
+    #     clean["api_key"] = self.api_key
+    #     resp = self.session.get(url, params=clean, timeout=self.timeout)
+    #     resp.raise_for_status()
+    #     return resp.json()
 
     # -- route metadata --------------------------------------------------
 
