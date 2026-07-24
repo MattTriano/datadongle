@@ -111,6 +111,7 @@ class OSMReader:
     ) -> Iterator[list[dict[str, Any]]]:
         date_filter = _to_overpass_timestamp(since.value) if since is not None else None
 
+        assert spec.query is not None  # OSMDatasetSpec requires it
         response = self.client.fetch(spec.query, date_filter=date_filter)
         elements = response.get("elements") or []
         logger.info(

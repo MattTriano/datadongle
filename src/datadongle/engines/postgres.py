@@ -12,7 +12,7 @@ logging, and retry helpers stay in ``db.core`` (shared with MySQL).
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
@@ -369,7 +369,7 @@ class PostgresEngine:
     def stream_to_destination(
         self,
         sql: str,
-        process_batch: callable,
+        process_batch: Callable[..., Any],
         params: dict[str, Any] | tuple | None = None,
         batch_size: int = 10000,
     ) -> int:

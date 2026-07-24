@@ -163,6 +163,8 @@ class CKANReader:
         if spec.resource_ids:
             resources = [meta.get_resource(rid) for rid in spec.resource_ids]
         else:
+            # The spec requires resource_ids or resource_format; this is the latter.
+            assert spec.resource_format is not None
             resources = meta.find_resources(spec.dataset_id, spec.resource_format)
 
         if not resources:

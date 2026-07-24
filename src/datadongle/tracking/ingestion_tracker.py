@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -65,7 +66,7 @@ class IngestionTracker:
         dataset_id: str,
         target_table: str,
         metadata: dict[str, Any] | None = None,
-    ) -> IngestionRun:
+    ) -> Iterator[IngestionRun]:
         """Create, yield, and persist an IngestionRun."""
         run = IngestionRun(
             source=source,

@@ -179,6 +179,7 @@ class StagedIngest:
         otherwise a plain append. The whole merge runs in a single
         transaction so it is atomic.
         """
+        assert self._columns is not None and self._col_list is not None  # set in __enter__
         with self._engine.cursor() as cur:
             if self._entity_key:
                 result = scd2_merge(
@@ -260,6 +261,7 @@ class StagedIngest:
         return all_columns
 
     def _rows_to_copy_buffer(self, rows: list[dict[str, Any]]) -> io.StringIO:
+        assert self._columns is not None  # set in __enter__
         buf = io.StringIO()
         for row in rows:
             vals = []

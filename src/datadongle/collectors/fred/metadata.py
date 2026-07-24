@@ -145,7 +145,7 @@ class FredMetadata:
 
         Returns a DataFrame with columns: id, name, press_release, link, notes.
         """
-        df = self._all_releases().copy()
+        df = self._all_releases.copy()
         return self._filter_keyword(df, keyword, columns=["name", "notes"])
 
     def describe_release(self, release_id: int) -> dict:
@@ -169,7 +169,7 @@ class FredMetadata:
 
         Returns a DataFrame with columns: id, name, link, notes.
         """
-        df = self._all_sources().copy()
+        df = self._all_sources.copy()
         return self._filter_keyword(df, keyword, columns=["name", "notes"])
 
     def describe_source(self, source_id: int) -> dict:

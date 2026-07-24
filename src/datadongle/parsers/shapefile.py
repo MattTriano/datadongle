@@ -114,7 +114,7 @@ def parse_shapefile(
             open_kwargs["layer"] = layer
 
         columns: list[str] | None = None
-        column_set: set[str] | None = None
+        column_set: set[str] = set()
         batch: list[dict[str, Any]] = []
         feature_index = 0
 

@@ -477,6 +477,7 @@ class IcebergWriteSession:
         Unlike the append paths, PyIceberg's ``upsert`` needs the full incoming
         set in memory to compute matches, so this path is not streamed.
         """
+        assert isinstance(self._mode, Upsert)  # dispatched on in _flush
         new_rows = con.sql(select_typed).to_arrow_table().cast(table.schema().as_arrow())
         if not new_rows.num_rows:
             self.rows_merged = 0
@@ -497,6 +498,7 @@ class IcebergWriteSession:
         ``invalidate_missing`` (full pulls only), entities absent from this
         pull are then tombstoned.
         """
+        assert isinstance(self._mode, SCD2)  # dispatched on in _flush
         entity_key = self._mode.entity_key
         hist = table.scan(selected_fields=(*entity_key, "record_hash")).to_arrow()
         con.register("hist", hist)
@@ -526,6 +528,7 @@ class IcebergWriteSession:
         ``record_hash = _TOMBSTONE_HASH`` so ``read_current`` stops surfacing
         it while ``read_history`` keeps the record. Returns the count appended.
         """
+        assert isinstance(self._mode, SCD2)  # only reached from _flush_scd2
         table = self._engine._load(self._target)  # latest snapshot
         entity_key = self._mode.entity_key
         con = self._engine._duckdb()
@@ -646,6 +649,7 @@ class IcebergWriteSession:
 
     def _hash_expr(self) -> str:
         """MD5 over the semantic columns (excludes entity_key + metadata cols)."""
+        assert isinstance(self._mode, SCD2)  # only reached on the SCD2 path
         exclude = set(self._mode.entity_key) | self._schema.metadata_column_names()
         blob_cols = set(self._schema.geometry) | self._schema.raster_column_names()
         parts = []

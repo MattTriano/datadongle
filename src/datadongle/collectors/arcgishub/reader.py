@@ -165,6 +165,10 @@ class ArcGISHubReader:
         available = self._list_layers(spec)
         if spec.layer_index == "all":
             return available
+        if isinstance(spec.layer_index, str):
+            raise ValueError(
+                f"Unknown layer_index {spec.layer_index!r}. Use an int, a list of ints, or 'all'."
+            )
 
         available_by_id = {idx: name for idx, name in available}
         resolved = []
