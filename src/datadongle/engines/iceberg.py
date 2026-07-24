@@ -42,7 +42,7 @@ import pyarrow.parquet as pq
 
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
-from datadongle.core.schema import Column, ColumnType, TableSchema
+from datadongle.core.schema import ColumnType, TableSchema
 from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 
 logger = logging.getLogger(__name__)
@@ -234,7 +234,7 @@ class IcebergEngine:
 
     def open_write(
         self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> "IcebergWriteSession":
+    ) -> IcebergWriteSession:
         if not isinstance(mode, (Append, Upsert, SCD2)):
             raise TypeError(f"Unsupported write mode for IcebergEngine: {mode!r}")
         return IcebergWriteSession(self, target, schema, mode)
@@ -441,7 +441,7 @@ class IcebergWriteSession:
         self.rows_staged += len(rows)
         return len(rows)
 
-    def __enter__(self) -> "IcebergWriteSession":
+    def __enter__(self) -> IcebergWriteSession:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:

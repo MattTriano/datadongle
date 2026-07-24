@@ -30,11 +30,13 @@ from .helpers import (
     write_shapefile_zip,
 )
 
-
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(params=[
+    "iceberg",
+    pytest.param("postgres", marks=pytest.mark.postgres),
+])
 def tiger_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))

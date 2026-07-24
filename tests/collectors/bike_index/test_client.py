@@ -4,13 +4,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from tenacity import RetryError
+
 from datadongle.collectors.bike_index.client import (
     BikeIndexClient,
     BikeIndexSearchParams,
     RateLimitedError,
     ServerError,
 )
-from tenacity import RetryError
 
 
 class TestBikeIndexSearchParams:

@@ -2,9 +2,10 @@ import zipfile
 
 import fiona
 import pytest
-from datadongle.parsers.shapefile import parse_shapefile
 from shapely import wkb as shapely_wkb
 from shapely.geometry import LineString, Point, Polygon, mapping
+
+from datadongle.parsers.shapefile import parse_shapefile
 
 
 @pytest.fixture

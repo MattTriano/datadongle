@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+
 from datadongle.tracking.ingestion_tracker import IngestionRun, IngestionTracker
 
 # ---------------------------------------------------------------------------

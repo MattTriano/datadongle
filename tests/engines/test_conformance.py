@@ -86,7 +86,10 @@ def _postgres():
     return eng
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(params=[
+    "iceberg",
+    pytest.param("postgres", marks=pytest.mark.postgres),
+])
 def env(request, tmp_path):
     """Yields (engine, spec, target) for each engine; drops the PG table after."""
     table_name = f"permits_{uuid.uuid4().hex[:8]}"

@@ -20,9 +20,10 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from rasterio.transform import from_origin
+
 from datadongle.collectors.threedep.spec import ThreeDEPDatasetSpec
 from datadongle.geo import BBox
-from rasterio.transform import from_origin
 
 # Synthetic tile is coarse (a 1-degree cell in PX pixels); SUB_TILE is the
 # small sub-tile edge the collector tiles with in tests, so a clip to a

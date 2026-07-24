@@ -27,6 +27,12 @@ def test_geometry_spec_defaults():
     assert g.srid == 4326
 
 
+def test_column_type_renders_as_its_value():
+    assert str(ColumnType.TEXT) == "text"
+    assert f"{ColumnType.TEXT}" == "text"
+    assert ColumnType.TEXT == "text"
+
+
 def test_table_schema_geometry_property():
     schema = TableSchema(
         columns=[

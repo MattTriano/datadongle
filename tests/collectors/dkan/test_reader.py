@@ -9,7 +9,6 @@ from datadongle.collectors.dkan.reader import (
     SOURCE_MODIFIED_COLUMN,
     DKANReader,
 )
-from datadongle.core.cursor import CursorSpec
 from datadongle.core.engine import TableRef
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2

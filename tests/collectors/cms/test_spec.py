@@ -4,6 +4,7 @@ executed fail loudly at construction time."""
 from __future__ import annotations
 
 import pytest
+
 from datadongle.collectors.cms.spec import CMSDatasetSpec
 
 

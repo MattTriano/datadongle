@@ -12,7 +12,7 @@ from datadongle.core.reader import SourceReader
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2
 
-from .helpers import DATASET_TITLE, FakeCMSClient, make_rows, make_spec, seeded_source
+from .helpers import DATASET_TITLE, FakeCMSClient, make_spec, seeded_source
 
 
 def _reader(source) -> CMSReader:

@@ -14,7 +14,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from datadongle.collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
+from datadongle.collectors.census.spec import (
+    GEOGRAPHY_CONFIG,
+    MAX_VARIABLES_PER_CALL,
+    CensusDatasetSpec,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +252,7 @@ class CensusClient:
         header = raw[0]
         rows = []
         for row_data in raw[1:]:
-            rows.append(dict(zip(header, row_data)))
+            rows.append(dict(zip(header, row_data, strict=True)))
         return rows
 
     @staticmethod

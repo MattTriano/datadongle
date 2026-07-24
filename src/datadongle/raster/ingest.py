@@ -37,8 +37,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import rasterio
-from datadongle.raster.wkb import to_hexwkb
 from rasterio.windows import Window
+
+from datadongle.raster.wkb import to_hexwkb
 
 logger = logging.getLogger(__name__)
 

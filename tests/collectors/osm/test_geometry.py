@@ -5,11 +5,10 @@ from __future__ import annotations
 from shapely.geometry import LineString, Point, Polygon
 
 from datadongle.collectors.osm.geometry import (
+    _element_to_shape,
     element_to_wkt,
     is_area,
-    _element_to_shape,
 )
-
 
 # ------------------------------------------------------------------ is_area
 

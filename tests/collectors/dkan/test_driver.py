@@ -11,7 +11,6 @@ from __future__ import annotations
 import dataclasses
 import os
 import uuid
-from types import SimpleNamespace
 
 import pytest
 
@@ -33,11 +32,13 @@ from .helpers import (
     seeded_pdc_source,
 )
 
-
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(params=[
+    "iceberg",
+    pytest.param("postgres", marks=pytest.mark.postgres),
+])
 def dkan_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":

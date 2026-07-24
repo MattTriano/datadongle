@@ -15,7 +15,6 @@ from datadongle.load.driver import run_collection
 
 from .conftest import make_detail_bike, make_search_bike
 
-
 # ------------------------------------------------------------------ protocol / metadata
 
 

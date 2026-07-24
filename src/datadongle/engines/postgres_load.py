@@ -42,7 +42,7 @@ class StagedIngest:
 
     def __init__(
         self,
-        engine: "PostgresEngine",
+        engine: PostgresEngine,
         target_table: str,
         target_schema: str,
         conflict_column: str | list[str] | None = None,
@@ -140,7 +140,7 @@ class StagedIngest:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "StagedIngest":
+    def __enter__(self) -> StagedIngest:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:

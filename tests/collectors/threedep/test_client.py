@@ -7,6 +7,7 @@ are not exercised here — those belong in a live smoke test.
 from __future__ import annotations
 
 import pytest
+
 from datadongle.collectors.threedep.client import (
     tile_name,
     tile_url,

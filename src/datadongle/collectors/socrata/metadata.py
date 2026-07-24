@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import requests
+
 from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
 

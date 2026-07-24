@@ -33,7 +33,10 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(params=[
+    "iceberg",
+    pytest.param("postgres", marks=pytest.mark.postgres),
+])
 def threedep_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))
@@ -61,8 +64,10 @@ def threedep_engine(request, tmp_path):
     try:
         yield eng
     finally:
-        eng.execute(f"drop schema {schema} cascade")
-        eng.close()
+        try:
+            eng.execute(f"drop schema {schema} cascade")
+        finally:
+            eng.close()
 
 
 def _schema_name(engine) -> str:

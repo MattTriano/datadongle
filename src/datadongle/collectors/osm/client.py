@@ -22,7 +22,6 @@ import re
 from typing import Any
 
 import requests
-from datadongle.collectors.osm.query import OverpassAPIQuery
 from requests.exceptions import ChunkedEncodingError, ConnectionError, ReadTimeout
 from tenacity import (
     before_sleep_log,
@@ -31,6 +30,8 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+from datadongle.collectors.osm.query import OverpassAPIQuery
 
 logger = logging.getLogger(__name__)
 

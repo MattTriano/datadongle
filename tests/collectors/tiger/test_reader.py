@@ -25,7 +25,6 @@ from datadongle.core.write_mode import SCD2, Append
 
 from .helpers import FakeTigerClient, tiger_dir_url, tiger_url, write_shapefile_zip
 
-
 # ---------------------------------------------------------------- pure helpers
 
 

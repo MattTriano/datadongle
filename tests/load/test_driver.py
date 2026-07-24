@@ -17,6 +17,8 @@ from datadongle.core.schema import Column, ColumnType, TableSchema
 from datadongle.core.write_mode import SCD2
 from datadongle.load.driver import run_collection
 
+DEFAULT_CURSOR_SPEC = CursorSpec("updated_at", "id")
+
 
 class FakeWriteSession:
     def __init__(self):
@@ -69,7 +71,7 @@ class FakeEngine:
 class FakeReader:
     source = "fake"
 
-    def __init__(self, pages, cursor_spec=CursorSpec("updated_at", "id")):
+    def __init__(self, pages, cursor_spec=DEFAULT_CURSOR_SPEC):
         self._pages = pages
         self._cursor_spec = cursor_spec
         self.read_since = "unset"

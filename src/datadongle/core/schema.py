@@ -13,10 +13,10 @@ per-source ``generate_ddl`` string building.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class ColumnType(str, Enum):
+class ColumnType(StrEnum):
     """Neutral column types, mapped per-engine to concrete storage types."""
 
     TEXT = "text"

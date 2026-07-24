@@ -140,7 +140,7 @@ class TigerReader:
         self._columns_cache[self._cache_key(spec, vintage)] = col_names
 
         columns: list[Column] = []
-        for name, fiona_type in zip(col_names, properties.values()):
+        for name, fiona_type in zip(col_names, properties.values(), strict=True):
             columns.append(Column(name, _fiona_to_column_type(fiona_type)))
 
         # County files sometimes encode the county only in the filename (e.g.

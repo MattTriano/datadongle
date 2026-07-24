@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
+
 from datadongle.collectors.census.spec import CensusDatasetSpec
 from datadongle.collectors.census.variable_mapper import PG_MAX_IDENTIFIER, CensusVariableMapper
 

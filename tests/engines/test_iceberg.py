@@ -215,7 +215,7 @@ def test_upsert_inserts_then_updates(engine):
     assert merged == 2  # 1 updated + 1 inserted
 
     df = engine.read_current(target)  # no entity_key ⇒ the table is the current state
-    assert dict(zip(df["id"], df["v"])) == {"a": "9", "b": "2", "c": "3"}
+    assert dict(zip(df["id"], df["v"], strict=True)) == {"a": "9", "b": "2", "c": "3"}
 
 
 def test_upsert_on_conflict_nothing_keeps_existing(engine):
@@ -229,7 +229,7 @@ def test_upsert_on_conflict_nothing_keeps_existing(engine):
     assert merged == 1
 
     df = engine.read_current(target)
-    assert dict(zip(df["id"], df["v"])) == {"a": "1", "c": "3"}
+    assert dict(zip(df["id"], df["v"], strict=True)) == {"a": "1", "c": "3"}
 
 
 # ------------------------------------------------------------- invalidate_missing

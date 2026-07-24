@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+
 from datadongle.collectors.census.client import CensusClient, _is_retryable
 from datadongle.collectors.census.spec import MAX_VARIABLES_PER_CALL, CensusDatasetSpec
 

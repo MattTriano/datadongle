@@ -6,7 +6,7 @@ from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import Engine, TableRef, WriteSession
 from datadongle.core.reader import SourceReader
 from datadongle.core.schema import Column, ColumnType, GeometrySpec, TableSchema
-from datadongle.core.write_mode import Append, SCD2, Upsert, WriteMode
+from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 
 __all__ = [
     "Cursor",
