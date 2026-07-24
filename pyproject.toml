@@ -1,6 +1,6 @@
 [project]
 name = "datadongle"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Installable data-collector tooling: source collectors, pluggable storage engines, and staged-ingest/SCD2 load strategies."
 readme = "README.md"
 authors = [{ name = "Matt Triano" }]
@@ -68,10 +68,12 @@ dev = [
     "pytest",
     "ruff>=0.15.20",
     "ty>=0.0.56",
+    "zizmor",
+    "pip-audit",
 ]
 
 [build-system]
-requires = ["hatchling>=1.27"]
+requires = ["hatchling>=1.27", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
