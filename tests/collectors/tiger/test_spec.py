@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from datadongle.collectors.tiger.spec import ALL_STATE_FIPS, TigerDatasetSpec
 
 
 def _spec(**overrides) -> TigerDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="census_tracts",
         layer="TRACT",
         vintages=[2023, 2024],

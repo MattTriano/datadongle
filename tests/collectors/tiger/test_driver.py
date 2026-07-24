@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import Any
 
 import pytest
 from shapely.geometry import LineString, Polygon
@@ -25,6 +26,7 @@ from ..common import NoopTracker
 from .helpers import (
     FakeTigerClient,
     _directory_html,
+    as_client_factory,
     tiger_dir_url,
     tiger_url,
     write_shapefile_zip,
@@ -60,7 +62,8 @@ def tiger_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
@@ -105,7 +108,7 @@ def _tract_feature(state: str, n: int, **extra) -> dict:
 
 
 def _tract_spec(schema, **overrides) -> TigerDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="census_tracts",
         layer="TRACT",
         vintages=[2023, 2024],
@@ -121,9 +124,7 @@ def _reader(files, listings=None, fail_urls=None):
     client = FakeTigerClient(files, listings or {})
     if fail_urls:
         client.fail_urls |= set(fail_urls)
-    reader = TigerReader(client_factory=lambda: client)
-    reader._built_client = client  # keep a handle for assertions
-    return reader
+    return TigerReader(client_factory=as_client_factory(client))
 
 
 def _default_tract_data():

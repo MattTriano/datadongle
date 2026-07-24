@@ -15,8 +15,11 @@ from __future__ import annotations
 import shutil
 import tempfile
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
+from datadongle.collectors.tiger.client import TigerClient
 from datadongle.collectors.tiger.metadata import TigerMetadata
 
 # The canonical TIGER base URL, so tests build the same URLs the reader does.
@@ -107,3 +110,12 @@ class FakeTigerClient:
         tmp.close()
         shutil.copy(self._files[url], tmp.name)
         return Path(tmp.name)
+
+
+def as_client_factory(client: FakeTigerClient) -> Callable[[], TigerClient]:
+    """Wrap a fake as a ``TigerReader`` client_factory.
+
+    ``FakeTigerClient`` duck-types ``TigerClient`` rather than subclassing it,
+    so the cast is where that intent is stated for the type checker.
+    """
+    return lambda: cast(TigerClient, client)

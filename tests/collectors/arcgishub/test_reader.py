@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -21,11 +22,12 @@ from .conftest import (
     ITEM_ID,
     FakeArcGISHubClient,
     layer_payload,
+    query_params,
 )
 
 
 def _spec(**over) -> ArcGISHubDatasetSpec:
-    base = {
+    base: dict[str, Any] = {
         "name": "tps_arrests",
         "base_url": BASE_URL,
         "item_id": ITEM_ID,
@@ -96,9 +98,11 @@ def test_schema_maps_types_geometry_and_oid_metadata():
     assert by_name["event_unique_id"].type is ColumnType.TEXT
     assert by_name["occurred_date"].type is ColumnType.TIMESTAMPTZ
     assert by_name["count"].type is ColumnType.INTEGER
-    assert by_name["geom"].type is ColumnType.GEOMETRY
-    assert by_name["geom"].geometry.kind == "Point"
-    assert by_name["geom"].geometry.srid == 4326
+    geom = by_name["geom"]
+    assert geom.type is ColumnType.GEOMETRY
+    assert geom.geometry is not None
+    assert geom.geometry.kind == "Point"
+    assert geom.geometry.srid == 4326
     assert schema.metadata_column_names() == {"objectid"}
 
 
@@ -198,7 +202,7 @@ def test_read_incremental_since_builds_epoch_ms_where():
     since = Cursor(value="2024-01-02T03:04:05+00:00")
     list(_reader(fake).read(_spec(where="Type='X'"), since=since))
 
-    query_calls = [p for (u, p) in fake.calls if u.endswith("/query")]
+    query_calls = query_params(fake)
     assert query_calls, "expected a /query call"
     where = query_calls[0]["where"]
     assert str(_iso_to_epoch_ms(since.value)) in where
@@ -209,7 +213,7 @@ def test_read_incremental_since_builds_epoch_ms_where():
 def test_read_full_uses_base_where_only():
     fake = FakeArcGISHubClient(pages={0: [[]]})
     list(_reader(fake).read(_spec(where="1=1"), since=None))
-    where = [p for (u, p) in fake.calls if u.endswith("/query")][0]["where"]
+    where = query_params(fake)[0]["where"]
     assert where == "1=1"
 
 

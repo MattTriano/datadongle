@@ -10,9 +10,10 @@ relies on: ``start`` filtering and ``offset``/``length`` paging.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 from datadongle.collectors.eia.client import EIAClient
+from datadongle.collectors.eia.reader import EIAReader
 from datadongle.collectors.eia.spec import EIADatasetSpec
 
 # A tiny electricity/retail-sales-shaped source: monthly price for one state,
@@ -159,9 +160,14 @@ FACET_VALUES = {
 }
 
 
+def fake_client(reader: EIAReader) -> FakeEIAClient:
+    """The fake behind a reader, typed so its canned rows are visible."""
+    return cast(FakeEIAClient, reader.client)
+
+
 def make_spec(schema: str = "raw_data", **overrides) -> EIADatasetSpec:
     """Build a spec against the given schema with sensible defaults."""
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         name="test_eia_retail_sales",
         target_table="test_eia_retail_sales",
         target_schema=schema,

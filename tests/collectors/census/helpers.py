@@ -13,6 +13,10 @@ returns estimate values as strings (so ``NUMERIC`` casting is exercised).
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, cast
+
+from datadongle.collectors.census.client import CensusClient
 from datadongle.collectors.census.spec import CensusDatasetSpec
 
 DATASET = "acs/acs5"
@@ -55,6 +59,15 @@ class FakeCensusClient:
         if state_fips in self.fail_states:
             raise RuntimeError(f"Injected failure for state {state_fips}")
         return [dict(r) for r in self.source.rows.get((dataset, vintage, state_fips), [])]
+
+
+def as_client_factory(client: FakeCensusClient) -> Callable[[], CensusClient]:
+    """Wrap a fake as a ``CensusReader`` client_factory.
+
+    ``FakeCensusClient`` duck-types ``CensusClient`` rather than subclassing it,
+    so the cast is where that intent is stated for the type checker.
+    """
+    return lambda: cast(CensusClient, client)
 
 
 # ---------------------------------------------------------------------
@@ -103,7 +116,7 @@ def seeded_source() -> FakeCensusSource:
 
 
 def make_spec(schema: str, **overrides) -> CensusDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="occupation_by_sex",
         dataset=DATASET,
         vintages=[2021, 2022],

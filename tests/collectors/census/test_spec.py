@@ -115,6 +115,7 @@ class TestEntityKey:
             target_table="t",
             target_schema="raw_data",
         )
+        assert spec.entity_key is not None
         assert "state" not in spec.entity_key
         assert spec.entity_key == ["zip_code_tabulation_area", "vintage"]
 

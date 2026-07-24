@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from datadongle.collectors.osm.query import OverpassAPIQuery, Regex
@@ -11,7 +13,7 @@ BBOX = BBox(41.62, -87.97, 42.05, -87.5)
 
 
 def _q(**kw) -> OverpassAPIQuery:
-    base = dict(element_types=["node", "way"], tag_filters=[{"amenity": "cafe"}])
+    base: dict[str, Any] = dict(element_types=["node", "way"], tag_filters=[{"amenity": "cafe"}])
     base.update(kw)
     return OverpassAPIQuery(**base)
 

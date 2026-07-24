@@ -14,7 +14,7 @@ import pytest
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
 from datadongle.core.schema import Column, ColumnType, TableSchema
-from datadongle.core.write_mode import SCD2
+from datadongle.core.write_mode import SCD2, WriteMode
 from datadongle.load.driver import run_collection
 
 DEFAULT_CURSOR_SPEC = CursorSpec("updated_at", "id")
@@ -47,7 +47,7 @@ class FakeEngine:
         self.ensured: list[TableRef] = []
         self.hwm_reads: list[tuple[TableRef, CursorSpec]] = []
         self.session = FakeWriteSession()
-        self.open_write_args = None
+        self.open_write_args: tuple[TableRef, TableSchema, WriteMode] | None = None
 
     def ensure_table(self, target, schema, mode):
         self.ensured.append(target)
@@ -182,6 +182,7 @@ def test_open_write_receives_the_readers_write_mode():
     engine = FakeEngine()
     reader = FakeReader(PAGES)
     run_collection(reader, SPEC, engine, mode="full")
+    assert engine.open_write_args is not None
     target, schema, mode = engine.open_write_args
     assert isinstance(mode, SCD2)
     assert mode.entity_key == ["id"]
@@ -234,11 +235,17 @@ def test_mode_dependent_reader_incremental_is_not_rejected():
     reader = _ModeDependentReader(PAGES)
     summary = run_collection(reader, SPEC, engine, mode="incremental")
     assert summary["rows_merged"] == 3
-    assert not engine.open_write_args[2].invalidate_missing
+    assert engine.open_write_args is not None
+    mode = engine.open_write_args[2]
+    assert isinstance(mode, SCD2)
+    assert not mode.invalidate_missing
 
 
 def test_mode_dependent_reader_full_enables_invalidate_missing():
     engine = FakeEngine()
     reader = _ModeDependentReader(PAGES)
     run_collection(reader, SPEC, engine, mode="full")
-    assert engine.open_write_args[2].invalidate_missing
+    assert engine.open_write_args is not None
+    mode = engine.open_write_args[2]
+    assert isinstance(mode, SCD2)
+    assert mode.invalidate_missing

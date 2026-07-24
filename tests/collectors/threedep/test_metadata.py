@@ -5,11 +5,11 @@ from __future__ import annotations
 from datadongle.collectors.threedep.client import SUPPORTED_PRODUCTS
 from datadongle.collectors.threedep.metadata import ThreeDEPMetadata
 
-from .helpers import TWO_TILE_BBOX, FakeThreeDEPClient, seeded_source
+from .helpers import TWO_TILE_BBOX, FakeThreeDEPClient, as_client, seeded_source
 
 
 def _meta(staged=("n42w088",)) -> ThreeDEPMetadata:
-    return ThreeDEPMetadata(client=FakeThreeDEPClient(seeded_source(staged)))
+    return ThreeDEPMetadata(client=as_client(FakeThreeDEPClient(seeded_source(staged))))
 
 
 def test_products_lists_the_seamless_layers():

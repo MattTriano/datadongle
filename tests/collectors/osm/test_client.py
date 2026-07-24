@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
+import requests
 from tenacity import RetryError, wait_none
 
 from datadongle.collectors.osm.client import (
@@ -19,10 +22,12 @@ from datadongle.geo import BBox
 @pytest.fixture(autouse=True)
 def _no_retry_backoff():
     """Keep tenacity's retry logic but drop the (long) exponential waits."""
-    original = OSMClient._post.retry.wait
-    OSMClient._post.retry.wait = wait_none()
+    # .retry is attached to the method by tenacity's decorator at runtime.
+    retry = OSMClient._post.retry  # ty: ignore[unresolved-attribute]
+    original = retry.wait
+    retry.wait = wait_none()
     yield
-    OSMClient._post.retry.wait = original
+    retry.wait = original
 
 
 class _FakeResponse:
@@ -50,8 +55,14 @@ class _FakeSession:
 
 def _client(responses) -> OSMClient:
     client = OSMClient()
-    client._session = _FakeSession(responses)
+    # _FakeSession duck-types the one Session method the client uses.
+    client._session = cast(requests.Session, _FakeSession(responses))
     return client
+
+
+def _posts(client: OSMClient) -> list[dict]:
+    """The posts recorded by the fake session behind ``client``."""
+    return cast(_FakeSession, client._session).posts
 
 
 def _query() -> OverpassAPIQuery:
@@ -71,7 +82,7 @@ def test_fetch_renders_query_and_returns_json():
     result = client.fetch(_query())
 
     assert result == payload
-    post = client._session.posts[0]
+    post = _posts(client)[0]
     assert post["url"] == client.endpoint
     assert post["data"]["data"].startswith("[out:json]")
     # http timeout is the query timeout plus the client's headroom
@@ -81,7 +92,7 @@ def test_fetch_renders_query_and_returns_json():
 def test_fetch_passes_date_filter_into_ql():
     client = _client([_FakeResponse(200, {"elements": []})])
     client.fetch(_query(), date_filter="2026-04-01T00:00:00Z")
-    assert '(newer:"2026-04-01T00:00:00Z")' in client._session.posts[0]["data"]["data"]
+    assert '(newer:"2026-04-01T00:00:00Z")' in _posts(client)[0]["data"]["data"]
 
 
 # ------------------------------------------------------------------ error mapping
@@ -92,7 +103,7 @@ def test_429_retries_then_raises_rate_limited():
     with pytest.raises(RetryError) as exc:
         client.fetch(_query())
     # retried up to the stop limit (3 attempts), surfacing the mapped exception
-    assert len(client._session.posts) == 3
+    assert len(_posts(client)) == 3
     assert isinstance(exc.value.last_attempt.exception(), OverpassRateLimited)
 
 
@@ -108,7 +119,7 @@ def test_400_raises_overpass_error_without_retry():
     with pytest.raises(OverpassError, match="bad query"):
         client.fetch(_query())
     # 4xx (other than 429) is not retryable
-    assert len(client._session.posts) == 1
+    assert len(_posts(client)) == 1
 
 
 def test_non_json_success_raises_overpass_error():

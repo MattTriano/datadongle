@@ -6,6 +6,7 @@ End-to-end collection through the family driver lives in ``test_driver.py``.
 from __future__ import annotations
 
 import dataclasses
+from typing import Any
 
 import pytest
 from shapely.geometry import LineString, Polygon
@@ -23,7 +24,13 @@ from datadongle.core.reader import SourceReader
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2, Append
 
-from .helpers import FakeTigerClient, tiger_dir_url, tiger_url, write_shapefile_zip
+from .helpers import (
+    FakeTigerClient,
+    as_client_factory,
+    tiger_dir_url,
+    tiger_url,
+    write_shapefile_zip,
+)
 
 # ---------------------------------------------------------------- pure helpers
 
@@ -97,11 +104,11 @@ def _tract_reader(tmp_path, *, vintage=2024, state="17"):
         prop_schema={"GEOID": "str:11", "NAME": "str:50", "ALAND": "int:14"},
     )
     files = {tiger_url(vintage, "TRACT", state): zip_path}
-    return TigerReader(client_factory=lambda: FakeTigerClient(files, {}))
+    return TigerReader(client_factory=as_client_factory(FakeTigerClient(files, {})))
 
 
 def _tract_spec(**overrides) -> TigerDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="census_tracts",
         layer="TRACT",
         vintages=[2024],
@@ -180,7 +187,7 @@ def test_no_id_column_falls_back_to_append(tmp_path):
         prop_schema={"NAME": "str:40", "MTFCC": "str:5"},
     )
     files = {tiger_url(2024, "COASTLINE", None): zip_path}
-    reader = TigerReader(client_factory=lambda: FakeTigerClient(files, {}))
+    reader = TigerReader(client_factory=as_client_factory(FakeTigerClient(files, {})))
     spec = _tract_spec(name="coastline", layer="COASTLINE", target_table="coastline", state_fips=None)
 
     assert isinstance(reader.write_mode(spec, mode="full"), Append)
@@ -212,7 +219,7 @@ def test_county_scope_injects_synthetic_fips(tmp_path):
         prop_schema={"LINEARID": "str:22", "FULLNAME": "str:100"},
     )
     files = {tiger_url(2024, "ROADS", "17031"): zip_path}
-    reader = TigerReader(client_factory=lambda: FakeTigerClient(files, {}))
+    reader = TigerReader(client_factory=as_client_factory(FakeTigerClient(files, {})))
     spec = dataclasses.replace(
         _tract_spec(name="roads", layer="ROADS", target_table="roads"),
         vintages=[2024],
@@ -234,7 +241,7 @@ def test_county_schema_adds_synthetic_fips_columns(tmp_path):
     )
     files = {tiger_url(2024, "ROADS", "17031"): zip_path}
     listings = {tiger_dir_url(2024, "ROADS"): _roads_listing()}
-    reader = TigerReader(client_factory=lambda: FakeTigerClient(files, listings))
+    reader = TigerReader(client_factory=as_client_factory(FakeTigerClient(files, listings)))
     spec = _tract_spec(name="roads", layer="ROADS", target_table="roads", state_fips=["17"])
 
     names = {c.name for c in reader.schema(spec).columns}
@@ -244,7 +251,7 @@ def test_county_schema_adds_synthetic_fips_columns(tmp_path):
 def test_units_enumerates_counties_filtered_to_states(tmp_path):
     files = {}  # not needed for enumeration
     listings = {tiger_dir_url(2024, "ROADS"): _roads_listing()}
-    reader = TigerReader(client_factory=lambda: FakeTigerClient(files, listings))
+    reader = TigerReader(client_factory=as_client_factory(FakeTigerClient(files, listings)))
     spec = _tract_spec(name="roads", layer="ROADS", target_table="roads", state_fips=["17"])
 
     # 17031 and 17043 are in IL; 06037 (CA) is filtered out.

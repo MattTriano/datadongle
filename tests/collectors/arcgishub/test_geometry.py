@@ -29,9 +29,9 @@ def test_polyline_becomes_multilinestring():
 
 
 # ArcGIS convention: clockwise ring = outer, counter-clockwise = hole.
-_OUTER = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]        # clockwise
-_HOLE = [[2, 2], [4, 2], [4, 4], [2, 4], [2, 2]]            # counter-clockwise
-_OUTER2 = [[20, 20], [20, 30], [30, 30], [30, 20], [20, 20]]  # clockwise
+_OUTER: list[list[float]] = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]        # clockwise
+_HOLE: list[list[float]] = [[2, 2], [4, 2], [4, 4], [2, 4], [2, 2]]            # counter-clockwise
+_OUTER2: list[list[float]] = [[20, 20], [20, 30], [30, 30], [30, 20], [20, 20]]  # clockwise
 
 
 def test_ring_orientation_helper():

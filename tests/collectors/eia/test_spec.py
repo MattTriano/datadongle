@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from datadongle.collectors.eia.spec import EIADatasetSpec
@@ -42,7 +44,7 @@ def test_route_path_is_stripped_of_slashes():
     ],
 )
 def test_invalid_specs_raise(overrides):
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="x",
         target_table="x",
         route_path="electricity/retail-sales",

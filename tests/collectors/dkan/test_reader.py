@@ -16,7 +16,7 @@ from datadongle.core.write_mode import SCD2
 from .helpers import (
     HOSPITAL_ID,
     LONG_RAW_HEADER,
-    FakeDKANClient,
+    as_client_factory,
     dkan_normalize,
     make_hospital_spec,
     seeded_pdc_source,
@@ -26,7 +26,7 @@ LONG_COL = dkan_normalize(LONG_RAW_HEADER)[:PG_MAX_IDENTIFIER].rstrip("_")
 
 
 def _reader(source) -> DKANReader:
-    return DKANReader(client_factory=lambda base_url: FakeDKANClient(base_url, source))
+    return DKANReader(client_factory=as_client_factory(source))
 
 
 # ------------------------------------------------------------------ metadata bits
@@ -55,9 +55,12 @@ def test_write_mode_scd2_with_entity_key():
 def test_write_mode_invalidate_missing_only_on_full():
     reader = _reader(seeded_pdc_source())
     spec = make_hospital_spec("raw_data", invalidate_missing=True)
-    assert reader.write_mode(spec, mode="full").invalidate_missing is True
+    full = reader.write_mode(spec, mode="full")
     # Defensive: an incremental mode would strip it (DKAN only ever runs full).
-    assert reader.write_mode(spec, mode="incremental").invalidate_missing is False
+    incremental = reader.write_mode(spec, mode="incremental")
+
+    assert isinstance(full, SCD2) and full.invalidate_missing is True
+    assert isinstance(incremental, SCD2) and incremental.invalidate_missing is False
 
 
 # ------------------------------------------------------------------ schema discovery

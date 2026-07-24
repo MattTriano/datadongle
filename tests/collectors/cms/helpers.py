@@ -13,7 +13,9 @@ from __future__ import annotations
 import csv
 import uuid as uuid_module
 from pathlib import Path
+from typing import cast
 
+from datadongle.collectors.cms.client import CMSClient
 from datadongle.collectors.cms.spec import CMSDatasetSpec
 
 DATASET_TITLE = "Fake Medicare Payments - by Provider and Service"
@@ -174,6 +176,15 @@ def seeded_source() -> FakeCMSSource:
         DATASET_TITLE, "2023", make_rows(n=7, blank_payment_index=2), modified="2024-06-04"
     )
     return source
+
+
+def as_client(client: FakeCMSClient) -> CMSClient:
+    """Type a fake as the client ``CMSReader``/``CMSMetadata`` expect.
+
+    ``FakeCMSClient`` duck-types ``CMSClient`` rather than subclassing it, so
+    the cast is where that intent is stated for the type checker.
+    """
+    return cast(CMSClient, client)
 
 
 def make_spec(

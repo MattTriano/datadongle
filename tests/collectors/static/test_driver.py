@@ -28,6 +28,7 @@ from .helpers import (
     FakeStaticFileClient,
     csv_bytes,
     default_files,
+    fake_client,
     make_spec,
 )
 
@@ -61,7 +62,8 @@ def static_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
@@ -190,7 +192,7 @@ def test_failing_file_does_not_block_others(static_engine, tmp_path):
     reader = StaticFileReader(client=FakeStaticFileClient(default_files()))
     # Fail the 2023 file. (2022 is files[0], the schema-discovery sample, so it
     # must stay reachable for the table to be created at all.)
-    reader.client.fail_urls.add(DEFAULT_URL_2023)
+    fake_client(reader).fail_urls.add(DEFAULT_URL_2023)
     summary = run_static_collection(reader, spec, static_engine)
 
     assert summary["files_processed"] == 1

@@ -260,6 +260,12 @@ class _FakeEngine:
     def ensure_table(self, target, schema, mode):
         self.calls["ensure"] = (target, schema, mode)
 
+    # unused by the driver in these tests
+    def query(self, sql, params=None): ...
+    def table_exists(self, target): return True
+    def table_columns(self, target): return set()
+    def geometry_columns(self, target): return {}
+
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)
         return self._hwm

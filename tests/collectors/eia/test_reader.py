@@ -18,7 +18,7 @@ from datadongle.engines.iceberg import IcebergEngine
 from datadongle.load.driver import run_collection
 
 from ..common import NoopTracker
-from .helpers import FakeEIAClient, make_spec
+from .helpers import FakeEIAClient, fake_client, make_spec
 
 
 def _reader(rows=None) -> EIAReader:
@@ -157,7 +157,7 @@ def test_full_then_incremental_round_trip(engine):
     assert len(_current(engine, target)) == 2
 
     # A new period appears → incremental picks up only the new row.
-    reader.client.rows.append(
+    fake_client(reader).rows.append(
         {
             "period": "2001-02",
             "stateid": "CO",
@@ -183,7 +183,7 @@ def test_full_refresh_versions_a_revised_value(engine):
 
     # EIA revises 2001-01 RES price 6.71 -> 7.00. Revisions are only caught on a
     # full refresh (period cursor can't see in-place changes to old periods).
-    reader.client.rows[0] = {**reader.client.rows[0], "price": "7.00"}
+    fake_client(reader).rows[0] = {**fake_client(reader).rows[0], "price": "7.00"}
     summary = run_collection(reader, spec, engine, mode="full")
 
     assert summary["rows_merged"] == 1  # only the changed entity re-versioned

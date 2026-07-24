@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from datadongle.collectors.ckan.spec import CKANDatasetSpec
 
 
 def _spec(**kw) -> CKANDatasetSpec:
-    base = dict(
+    base: dict[str, Any] = dict(
         name="chicago_food_inspections",
         base_url="https://data.cityofchicago.org",
         dataset_id="4ijn-s7e5",

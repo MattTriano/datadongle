@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from datadongle.collectors.cms.metadata import CMSMetadata, vintage_from_temporal
 
-from .helpers import DATASET_TITLE, FakeCMSClient, FakeCMSSource, make_rows
+from .helpers import DATASET_TITLE, FakeCMSClient, FakeCMSSource, as_client, make_rows
 
 
 def test_versions_resolve_per_vintage_with_both_handles():
     source = FakeCMSSource()
     source.set_version(DATASET_TITLE, "2023", make_rows(2), modified="2024-06-04")
     source.set_version(DATASET_TITLE, "2022", make_rows(2), modified="2023-05-10")
-    meta = CMSMetadata(FakeCMSClient(source))
+    meta = CMSMetadata(as_client(FakeCMSClient(source)))
 
     versions = meta.versions(meta.get_dataset(DATASET_TITLE))
 

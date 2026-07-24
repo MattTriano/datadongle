@@ -21,8 +21,11 @@ from __future__ import annotations
 import csv
 import re
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
+from datadongle.collectors.dkan.client import DKANClient
 from datadongle.collectors.dkan.spec import DKANDatasetSpec
 
 PDC_BASE_URL = "https://fake-pdc.cms.gov"
@@ -190,8 +193,17 @@ def seeded_op_source() -> FakeDKANSource:
     return source
 
 
+def as_client_factory(source, page_size: int = 3) -> Callable[[str], DKANClient]:
+    """A ``DKANReader`` client_factory serving fakes over ``source``.
+
+    ``FakeDKANClient`` duck-types ``DKANClient`` rather than subclassing it, so
+    the cast is where that intent is stated for the type checker.
+    """
+    return lambda base_url: cast(DKANClient, FakeDKANClient(base_url, source, page_size))
+
+
 def make_hospital_spec(schema: str, retrieval: str = "datastore", **overrides) -> DKANDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="pdc_hospital_general_information",
         base_url=PDC_BASE_URL,
         dataset_identifiers=[HOSPITAL_ID],
@@ -205,7 +217,7 @@ def make_hospital_spec(schema: str, retrieval: str = "datastore", **overrides) -
 
 
 def make_payments_spec(schema: str, retrieval: str = "datastore", **overrides) -> DKANDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="openpayments_general_payments",
         base_url=OP_BASE_URL,
         dataset_identifiers=[OP_2023_ID, OP_2024_ID],

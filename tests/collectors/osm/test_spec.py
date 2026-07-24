@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import pytest
 
@@ -19,7 +20,7 @@ def _query() -> OverpassAPIQuery:
 
 
 def _spec(**kw) -> OSMDatasetSpec:
-    base = dict(name="chi_cafes", target_table="chi_cafes", query=_query())
+    base: dict[str, Any] = dict(name="chi_cafes", target_table="chi_cafes", query=_query())
     base.update(kw)
     return OSMDatasetSpec(**base)
 
@@ -66,7 +67,7 @@ def test_empty_promoted_tag_string_raises():
 
 @pytest.mark.parametrize("missing", ["name", "target_table"])
 def test_required_fields(missing):
-    kw = dict(name="x", target_table="x")
+    kw: dict[str, Any] = dict(name="x", target_table="x")
     kw[missing] = ""
     with pytest.raises(ValueError, match="required"):
         OSMDatasetSpec(query=_query(), **kw)

@@ -17,11 +17,14 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
+from datadongle.collectors.threedep.client import ThreeDEPClient
+from datadongle.collectors.threedep.reader import ThreeDEPReader
 from datadongle.collectors.threedep.spec import ThreeDEPDatasetSpec
 from datadongle.geo import BBox
 
@@ -44,6 +47,8 @@ _NAME_RE = re.compile(r"n(\d+)w(\d+)")
 def tile_extent(name: str) -> tuple[float, float, float, float]:
     """(west, south, east, north) of a 1-degree tile from its NW-corner name."""
     m = _NAME_RE.fullmatch(name)
+    if m is None:
+        raise ValueError(f"Not a tile name: {name!r}")
     north = int(m.group(1))
     west = -int(m.group(2))
     return west, north - 1, west + 1, north
@@ -117,10 +122,24 @@ def seeded_source(tiles=("n42w088",), base_value: float = 1000.0) -> FakeThreeDE
     return source
 
 
+def as_client(client: FakeThreeDEPClient) -> ThreeDEPClient:
+    """Type a fake as the client ``ThreeDEPReader``/``ThreeDEPMetadata`` expect.
+
+    ``FakeThreeDEPClient`` duck-types ``ThreeDEPClient`` rather than subclassing
+    it, so the cast is where that intent is stated for the type checker.
+    """
+    return cast(ThreeDEPClient, client)
+
+
+def fake_client(reader: ThreeDEPReader) -> FakeThreeDEPClient:
+    """The fake behind a reader, typed so its recorded calls are visible."""
+    return cast(FakeThreeDEPClient, reader.client)
+
+
 def make_elevation_spec(
     schema: str, bbox: BBox = SINGLE_TILE_BBOX, **overrides
 ) -> ThreeDEPDatasetSpec:
-    kwargs = dict(
+    kwargs: dict[str, Any] = dict(
         name="fake_elevation",
         target_table="fake_elevation",
         target_schema=schema,

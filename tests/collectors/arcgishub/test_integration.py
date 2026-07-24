@@ -5,6 +5,7 @@ round-trip (source date stored as ISO, read back, refiltered as epoch ms)."""
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -14,14 +15,14 @@ from datadongle.core.engine import TableRef
 from datadongle.engines.iceberg import IcebergEngine
 from datadongle.load.driver import run_collection
 
-from .conftest import BASE_URL, ITEM_ID, FakeArcGISHubClient, layer_payload
+from .conftest import BASE_URL, ITEM_ID, FakeArcGISHubClient, layer_payload, query_params
 
 D1_MS = 1704164645000  # 2024-01-02T03:04:05Z
 D2_MS = D1_MS + 86_400_000  # one day later
 
 
 def _spec(**over) -> ArcGISHubDatasetSpec:
-    base = {
+    base: dict[str, Any] = {
         "name": "arrests",
         "base_url": BASE_URL,
         "item_id": ITEM_ID,
@@ -73,7 +74,7 @@ def test_full_then_incremental_collection(engine):
     assert set(engine.read_current(target)["event_unique_id"]) == {"E1", "E2"}
 
     # The second /query carried an incremental where derived from the HWM.
-    query_wheres = [p["where"] for (u, p) in fake.calls if u.endswith("/query")]
+    query_wheres = [p["where"] for p in query_params(fake)]
     assert "Occurred_Date >" in query_wheres[-1]
 
 
@@ -85,5 +86,5 @@ def test_incremental_first_run_has_no_hwm_reads_all(engine):
     reader = ArcGISHubReader(client_factory=fake.factory())
     # No prior table -> HWM is None -> full read; the where is just the base filter.
     run_collection(reader, _spec(), engine, mode="incremental")
-    first_where = [p["where"] for (u, p) in fake.calls if u.endswith("/query")][0]
+    first_where = query_params(fake)[0]["where"]
     assert first_where == "1=1"

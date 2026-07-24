@@ -12,11 +12,11 @@ from datadongle.core.reader import SourceReader
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2
 
-from .helpers import DATASET_TITLE, FakeCMSClient, make_spec, seeded_source
+from .helpers import DATASET_TITLE, FakeCMSClient, as_client, make_spec, seeded_source
 
 
 def _reader(source) -> CMSReader:
-    return CMSReader(client=FakeCMSClient(source))
+    return CMSReader(client=as_client(FakeCMSClient(source)))
 
 
 def _narrow(spec, vintage):
