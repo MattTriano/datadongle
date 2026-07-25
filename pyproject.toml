@@ -67,7 +67,7 @@ all = ["datadongle[postgres,mysql,geo,iceberg]"]
 dev = [
     "pytest",
     "ruff>=0.15.20",
-    "ty>=0.0.56",
+    "ty>=0.0.61",
     "zizmor",
     "pip-audit",
 ]
