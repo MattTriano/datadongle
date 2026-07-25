@@ -86,7 +86,12 @@ def _postgres():
     return eng
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def env(request, tmp_path):
     """Yields (engine, spec, target) for each engine; drops the PG table after."""
     table_name = f"permits_{uuid.uuid4().hex[:8]}"
@@ -124,15 +129,29 @@ def test_incremental_scd2_conformance(env):
     reader = _reader()
 
     # Run 1 (full): two entities land as current.
-    _set_pages(reader, [[_row("P1", "open", "1", "2024-01-01T00:00:00.000000"),
-                         _row("P2", "open", "2", "2024-01-02T00:00:00.000000")]])
+    _set_pages(
+        reader,
+        [
+            [
+                _row("P1", "open", "1", "2024-01-01T00:00:00.000000"),
+                _row("P2", "open", "2", "2024-01-02T00:00:00.000000"),
+            ]
+        ],
+    )
     s1 = run_collection(reader, spec, engine, mode="full")
     assert s1["rows_merged"] == 2
     assert len(_current(engine, target)) == 2
 
     # Run 2 (incremental, identical re-pull): a no-op, no new versions.
-    _set_pages(reader, [[_row("P1", "open", "1", "2024-01-01T00:00:00.000000"),
-                         _row("P2", "open", "2", "2024-01-02T00:00:00.000000")]])
+    _set_pages(
+        reader,
+        [
+            [
+                _row("P1", "open", "1", "2024-01-01T00:00:00.000000"),
+                _row("P2", "open", "2", "2024-01-02T00:00:00.000000"),
+            ]
+        ],
+    )
     s2 = run_collection(reader, spec, engine, mode="incremental")
     assert s2["rows_merged"] == 0
     assert len(_current(engine, target)) == 2

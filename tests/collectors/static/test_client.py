@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+
 from datadongle.collectors.static.client import (
     StaticFileClient,
     StaticFileDownloadError,
@@ -40,7 +41,7 @@ class TestCsvParsing:
     def _rows(self, data: bytes, **ref_overrides):
         ref = FileRef(url="https://x.test/f.csv", vintage="2023", **ref_overrides)
         client = FakeStaticFileClient({ref.url: data})
-        path = client.download_to_tempfile(ref.url)
+        path = client.download_to_tempfile(ref.url, suffix=f".{ref.file_format}")
         try:
             return list(client.parse_file(path, ref))
         finally:
@@ -85,7 +86,7 @@ class TestXlsxParsing:
         )
         ref = FileRef(url="https://x.test/f.xlsx", vintage="2023", file_format="xlsx")
         client = FakeStaticFileClient({ref.url: data})
-        path = client.download_to_tempfile(ref.url)
+        path = client.download_to_tempfile(ref.url, suffix=f".{ref.file_format}")
         try:
             (row,) = list(client.parse_file(path, ref))
         finally:

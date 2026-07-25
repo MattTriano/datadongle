@@ -15,13 +15,13 @@ from datadongle.core.reader import SourceReader
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2
 
-from .helpers import FakeCensusClient, make_spec, seeded_source
+from .helpers import FakeCensusClient, as_client_factory, make_spec, seeded_source
 
 
 @pytest.fixture
 def reader():
     source = seeded_source()
-    return CensusReader(client_factory=lambda: FakeCensusClient(source))
+    return CensusReader(client_factory=as_client_factory(FakeCensusClient(source)))
 
 
 def _one(spec, vintage, state=None):
@@ -113,7 +113,7 @@ def test_read_normalizes_spaced_geo_id_names():
             ]
         },
     )
-    reader = CensusReader(client_factory=lambda: FakeCensusClient(source))
+    reader = CensusReader(client_factory=as_client_factory(FakeCensusClient(source)))
     spec = _one(make_spec("raw_data", geography_level="block group"), 2022, state="17")
 
     rows = next(iter(reader.read(spec, since=None)))
@@ -124,7 +124,7 @@ def test_read_normalizes_spaced_geo_id_names():
 def test_variables_resolved_once_per_vintage(reader):
     """Reading every state of a vintage resolves that vintage's variables once."""
     spec = make_spec("raw_data")
-    for state in spec.state_fips:
+    for state in spec.states:
         list(reader.read(_one(spec, 2022, state=state), since=None))
 
     client = reader.client

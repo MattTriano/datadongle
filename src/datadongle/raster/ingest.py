@@ -37,8 +37,9 @@ from dataclasses import dataclass
 
 import numpy as np
 import rasterio
-from datadongle.raster.wkb import to_hexwkb
 from rasterio.windows import Window
+
+from datadongle.raster.wkb import to_hexwkb
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,7 @@ def iter_tiles(
             for col_off in range(0, ds.width, tile_size):
                 w = min(tile_size, ds.width - col_off)
                 h = min(tile_size, ds.height - row_off)
-                window = Window(col_off, row_off, w, h)
+                window = Window(col_off, row_off, w, h)  # ty: ignore[too-many-positional-arguments]
                 transform = ds.window_transform(window)
 
                 # Tile extent first, so a clipped-out tile costs no read.

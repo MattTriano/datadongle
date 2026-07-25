@@ -26,6 +26,8 @@ from .helpers import (
     SUB_TILE,
     TWO_TILE_BBOX,
     FakeThreeDEPClient,
+    as_client,
+    fake_client,
     make_elevation_spec,
     seeded_source,
 )
@@ -33,7 +35,12 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def threedep_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))
@@ -57,12 +64,15 @@ def threedep_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
-        eng.execute(f"drop schema {schema} cascade")
-        eng.close()
+        try:
+            eng.execute(f"drop schema {schema} cascade")
+        finally:
+            eng.close()
 
 
 def _schema_name(engine) -> str:
@@ -82,7 +92,7 @@ def _history(engine, target):
 
 
 def _reader(source) -> ThreeDEPReader:
-    return ThreeDEPReader(client=FakeThreeDEPClient(source), tile_size=SUB_TILE)
+    return ThreeDEPReader(client=as_client(FakeThreeDEPClient(source)), tile_size=SUB_TILE)
 
 
 def _spec_and_target(engine, bbox=SINGLE_TILE_BBOX):
@@ -121,13 +131,13 @@ def test_incremental_skips_present_tiles_without_download(threedep_engine):
     reader = _reader(seeded_source(["n42w088"]))
     run_threedep_collection(reader, spec, threedep_engine, mode="full")
 
-    reader.client.downloaded.clear()
+    fake_client(reader).downloaded.clear()
     summary = run_threedep_collection(reader, spec, threedep_engine, mode="incremental")
 
     assert summary["mode"] == "incremental"
     assert summary["tiles_skipped_present"] == 1
     assert summary["tiles_collected"] == 0
-    assert reader.client.downloaded == []
+    assert fake_client(reader).downloaded == []
 
 
 def test_incremental_collects_only_tiles_after_the_frontier(threedep_engine):
@@ -143,7 +153,7 @@ def test_incremental_collects_only_tiles_after_the_frontier(threedep_engine):
 
     assert summary["tiles_skipped_present"] == 1
     assert summary["tiles_collected"] == 1
-    assert reader.client.downloaded == ["n43w088"]
+    assert fake_client(reader).downloaded == ["n43w088"]
     assert set(_current(threedep_engine, target)["source_tile"]) == {"n42w088", "n43w088"}
 
 
@@ -193,7 +203,7 @@ def test_missing_at_source_tile_is_skipped_not_fatal(threedep_engine):
 def test_full_run_isolates_a_failing_tile(threedep_engine):
     spec, target = _spec_and_target(threedep_engine, bbox=TWO_TILE_BBOX)
     reader = _reader(seeded_source(["n42w088", "n43w088"]))
-    reader.client.fail_tiles.add("n42w088")
+    fake_client(reader).fail_tiles.add("n42w088")
 
     summary = run_threedep_collection(reader, spec, threedep_engine, mode="full")
 
@@ -208,7 +218,7 @@ def test_incremental_run_stops_at_a_failing_tile_and_resumes(threedep_engine):
     spec, target = _spec_and_target(threedep_engine, bbox=TWO_TILE_BBOX)
     source = seeded_source(["n42w088", "n43w088"])
     reader = _reader(source)
-    reader.client.fail_tiles.add("n42w088")
+    fake_client(reader).fail_tiles.add("n42w088")
 
     summary = run_threedep_collection(reader, spec, threedep_engine, mode="incremental")
 
@@ -218,7 +228,7 @@ def test_incremental_run_stops_at_a_failing_tile_and_resumes(threedep_engine):
     assert len(summary["errors"]) == 1
     assert len(_current(threedep_engine, target)) == 0
 
-    reader.client.fail_tiles.clear()
+    fake_client(reader).fail_tiles.clear()
     healed = run_threedep_collection(reader, spec, threedep_engine, mode="incremental")
 
     assert healed["errors"] == []
@@ -249,9 +259,7 @@ def test_postgres_st_value_samples_the_landed_raster(threedep_engine):
     if isinstance(threedep_engine, IcebergEngine):
         pytest.skip("PostGIS-only behavior (raster COPY + ST_Value)")
     spec, target = _spec_and_target(threedep_engine)
-    run_threedep_collection(
-        _reader(seeded_source(["n42w088"])), spec, threedep_engine, mode="full"
-    )
+    run_threedep_collection(_reader(seeded_source(["n42w088"])), spec, threedep_engine, mode="full")
 
     b = SINGLE_TILE_BBOX
     cx, cy = (b.west + b.east) / 2, (b.south + b.north) / 2

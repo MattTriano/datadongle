@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+
 from datadongle.collectors.tiger.client import TigerClient, _is_retryable
 
 

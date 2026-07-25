@@ -80,6 +80,7 @@ class CMSReader:
     @staticmethod
     def _vintage(spec: CMSDatasetSpec) -> str:
         """The single vintage this call operates on (spec is narrowed by the driver)."""
+        assert spec.vintages, "spec must be narrowed to one vintage before this call"
         return spec.vintages[0]
 
     # ------------------------------------------------------------------
@@ -119,6 +120,7 @@ class CMSReader:
     def write_mode(self, spec: CMSDatasetSpec, *, mode: str = "full") -> WriteMode:
         # CMS is SCD2-only (the spec requires an entity_key that includes
         # "vintage"); the policy doesn't depend on the collection mode.
+        assert spec.entity_key is not None  # CMSDatasetSpec requires it
         return SCD2(entity_key=spec.entity_key)
 
     def cursor_spec(self, spec: CMSDatasetSpec) -> CursorSpec | None:

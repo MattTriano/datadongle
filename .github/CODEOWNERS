@@ -1,0 +1,3 @@
+# Workflow and CI changes require review from the owner.
+/.github/**              @matttriano
+/pyproject.toml          @matttriano

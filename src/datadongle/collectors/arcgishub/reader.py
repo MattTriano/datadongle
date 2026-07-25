@@ -165,6 +165,10 @@ class ArcGISHubReader:
         available = self._list_layers(spec)
         if spec.layer_index == "all":
             return available
+        if isinstance(spec.layer_index, str):
+            raise ValueError(
+                f"Unknown layer_index {spec.layer_index!r}. Use an int, a list of ints, or 'all'."
+            )
 
         available_by_id = {idx: name for idx, name in available}
         resolved = []
@@ -183,9 +187,14 @@ class ArcGISHubReader:
             payload = self._client(spec).get_json(f"{service_url}/layers", params={"f": "json"})
             if "error" in payload:
                 err = payload["error"]
-                raise RuntimeError(f"ArcGIS /layers error: {err.get('code')} - {err.get('message')}")
+                raise RuntimeError(
+                    f"ArcGIS /layers error: {err.get('code')} - {err.get('message')}"
+                )
             self._layers_cache[service_url] = payload.get("layers") or []
-        return [(layer["id"], layer.get("name", str(layer["id"]))) for layer in self._layers_cache[service_url]]
+        return [
+            (layer["id"], layer.get("name", str(layer["id"])))
+            for layer in self._layers_cache[service_url]
+        ]
 
     def _resolve_service_url(self, spec: ArcGISHubDatasetSpec) -> str:
         """Feature service URL from the Hub item metadata."""
@@ -266,7 +275,10 @@ class ArcGISHubReader:
             )
         logger.info(
             "Field overlap: %d/%d (%.0f%%); only in some layers: %s",
-            len(shared), len(all_fields), overlap * 100, all_fields - shared or "none",
+            len(shared),
+            len(all_fields),
+            overlap * 100,
+            all_fields - shared or "none",
         )
 
     # ------------------------------------------------------------------
@@ -322,9 +334,7 @@ class ArcGISHubReader:
 # ----------------------------------------------------------------------
 
 
-def _build_schema(
-    spec: ArcGISHubDatasetSpec, layer_infos: list[dict[str, Any]]
-) -> TableSchema:
+def _build_schema(spec: ArcGISHubDatasetSpec, layer_infos: list[dict[str, Any]]) -> TableSchema:
     """Neutral schema = union of layer fields + geometry + optional layer column.
 
     When unioning layers, the first layer's type wins for a shared field (the
@@ -447,9 +457,7 @@ def _iso_to_epoch_ms(value: str) -> int:
     return int(dt.timestamp() * 1000)
 
 
-def _geometry_to_ewkt(
-    geom: dict[str, Any] | None, geometry_type: str, srid: int
-) -> str | None:
+def _geometry_to_ewkt(geom: dict[str, Any] | None, geometry_type: str, srid: int) -> str | None:
     """Convert an ArcGIS geometry object to EWKT (``SRID=<srid>;...``)."""
     if not geom:
         return None

@@ -34,6 +34,7 @@ from __future__ import annotations
 import re
 
 import pandas as pd
+
 from datadongle.collectors.census.abbreviations import ABBREVIATIONS
 from datadongle.collectors.census.metadata import CensusMetadata
 from datadongle.collectors.census.spec import CensusDatasetSpec
@@ -257,4 +258,4 @@ class CensusVariableMapper:
         Suitable for use in a dbt model's column aliasing.
         """
         df = self.build_mapping_df(spec, vintage)
-        return dict(zip(df["variable"], df["column_name"]))
+        return dict(zip(df["variable"], df["column_name"], strict=True))

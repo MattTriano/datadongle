@@ -11,10 +11,11 @@ from __future__ import annotations
 import dataclasses
 import os
 import uuid
-from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
+from datadongle.collectors.dkan.client import DKANClient
 from datadongle.collectors.dkan.driver import run_dkan_collection
 from datadongle.collectors.dkan.reader import DKANReader
 from datadongle.core.engine import TableRef
@@ -26,6 +27,7 @@ from .helpers import (
     OP_2023_ID,
     OP_2024_ID,
     FakeDKANClient,
+    as_client_factory,
     make_hospital_rows,
     make_hospital_spec,
     make_payments_spec,
@@ -33,11 +35,15 @@ from .helpers import (
     seeded_pdc_source,
 )
 
-
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def dkan_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":
@@ -62,7 +68,8 @@ def dkan_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
@@ -75,7 +82,7 @@ def _schema_name(engine) -> str:
 
 
 def _run(engine, spec, source, tracker=None):
-    reader = DKANReader(client_factory=lambda base_url: FakeDKANClient(base_url, source))
+    reader = DKANReader(client_factory=as_client_factory(source))
     return run_dkan_collection(reader, spec, engine, tracker=tracker)
 
 
@@ -265,7 +272,8 @@ def test_tracker_records_a_run_per_dataset(dkan_engine):
 # --------------------------------------------------------------- helpers
 
 
-def _failing_client(base_url, source, fail_identifier):
+def _failing_client(base_url, source, fail_identifier) -> DKANClient:
     client = FakeDKANClient(base_url, source)
     client.fail_identifiers.add(fail_identifier)
-    return client
+    # FakeDKANClient duck-types DKANClient rather than subclassing it.
+    return cast(DKANClient, client)

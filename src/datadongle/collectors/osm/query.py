@@ -207,7 +207,7 @@ class OverpassAPIQuery:
     def _render_selector(
         self,
         element_type: str,
-        filter_group: dict[str, str | list[str] | None],
+        filter_group: dict[str, str | list[str] | Regex | None],
         date_filter: str | None,
     ) -> str:
         """Render one selector: element type + tag filters + spatial + date."""

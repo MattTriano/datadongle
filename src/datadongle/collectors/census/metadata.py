@@ -24,7 +24,7 @@ Usage:
     cm.list_geographies("acs/acs5", 2022)
 """
 
-from functools import lru_cache
+from functools import cached_property
 
 import pandas as pd
 import requests
@@ -47,7 +47,7 @@ class CensusMetadata:
         resp.raise_for_status()
         return resp.json()
 
-    @lru_cache(maxsize=1)
+    @cached_property
     def _dataset_catalog(self) -> list[dict]:
         """Fetch and cache the full dataset catalog (api.census.gov/data.json)."""
         data = self._get_json(f"{self.BASE}.json")
@@ -78,7 +78,7 @@ class CensusMetadata:
         Returns a DataFrame with columns: title, name, vintage, description.
         """
         rows = []
-        for ds in self._dataset_catalog():
+        for ds in self._dataset_catalog:
             name = "/".join(ds.get("c_dataset", []))
             vintage = ds.get("c_vintage")
             title = ds.get("title", "")
@@ -115,7 +115,7 @@ class CensusMetadata:
             e.g. "acs/acs5", "dec/pl", "cbp"
         """
         vintages = []
-        for ds in self._dataset_catalog():
+        for ds in self._dataset_catalog:
             name = "/".join(ds.get("c_dataset", []))
             if name == dataset_name and ds.get("c_isAvailable", False):
                 v = ds.get("c_vintage")

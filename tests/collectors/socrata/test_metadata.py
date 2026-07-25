@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+
 from datadongle.collectors.socrata.metadata import SocrataColumnInfo, SocrataTableMetadata
 from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 

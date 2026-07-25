@@ -181,8 +181,6 @@ def test_template_is_syntactically_valid_python():
 
     # Strip the leading comment lines; the rest must parse as a call expression.
     body = "\n".join(
-        line
-        for line in _builder().template(LEAF).splitlines()
-        if not line.startswith("#")
+        line for line in _builder().template(LEAF).splitlines() if not line.startswith("#")
     )
     ast.parse(body)

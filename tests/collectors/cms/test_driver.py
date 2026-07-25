@@ -24,16 +24,21 @@ from .helpers import (
     DATASET_TITLE,
     FakeCMSClient,
     FakeCMSSource,
+    as_client,
     make_rows,
     make_spec,
     seeded_source,
 )
 
-
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def cms_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":
@@ -58,7 +63,8 @@ def cms_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
@@ -71,7 +77,7 @@ def _schema_name(engine) -> str:
 
 
 def _run(engine, spec, source, tracker=None, client=None):
-    reader = CMSReader(client=client or FakeCMSClient(source))
+    reader = CMSReader(client=as_client(client or FakeCMSClient(source)))
     return run_cms_collection(reader, spec, engine, tracker=tracker)
 
 

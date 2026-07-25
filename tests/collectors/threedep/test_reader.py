@@ -16,6 +16,8 @@ from .helpers import (
     SUB_TILE,
     TWO_TILE_BBOX,
     FakeThreeDEPClient,
+    as_client,
+    fake_client,
     make_elevation_spec,
     seeded_source,
 )
@@ -23,7 +25,7 @@ from .helpers import (
 
 def _reader(source, batch_size=16) -> ThreeDEPReader:
     return ThreeDEPReader(
-        client=FakeThreeDEPClient(source), tile_size=SUB_TILE, batch_size=batch_size
+        client=as_client(FakeThreeDEPClient(source)), tile_size=SUB_TILE, batch_size=batch_size
     )
 
 
@@ -76,6 +78,7 @@ def test_rast_is_excluded_from_the_content_hash():
 def test_write_mode_is_scd2_on_tile_id():
     reader = _reader(seeded_source())
     mode = reader.write_mode(make_elevation_spec("raw_data"), mode="full")
+    assert isinstance(mode, SCD2)
     assert mode == SCD2(entity_key=["tile_id"])
     assert mode.invalidate_missing is False
 
@@ -139,22 +142,27 @@ def test_read_namespaces_tile_ids_and_stamps_source_tile():
 def test_read_clips_sub_tiles_to_the_bbox():
     reader = _reader(seeded_source(["n42w088"]))
     b = SINGLE_TILE_BBOX
-    rows = [r for batch in reader.read(make_elevation_spec("raw_data", bbox=b), since=None) for r in batch]
+    rows = [
+        r
+        for batch in reader.read(make_elevation_spec("raw_data", bbox=b), since=None)
+        for r in batch
+    ]
 
     # The bbox is a sub-degree slice of the tile, so clipping must drop some
     # of the 4x4 sub-tile grid — and every kept sub-tile intersects the bbox.
     assert 0 < len(rows) < 16
     for r in rows:
         assert not (
-            r["max_x"] < b.west or r["min_x"] > b.east or r["max_y"] < b.south or r["min_y"] > b.north
+            r["max_x"] < b.west
+            or r["min_x"] > b.east
+            or r["max_y"] < b.south
+            or r["min_y"] > b.north
         )
 
 
 def test_read_batches_by_batch_size():
     reader = _reader(seeded_source(["n42w088"]), batch_size=3)
-    batches = list(
-        reader.read(make_elevation_spec("raw_data", bbox=SINGLE_TILE_BBOX), since=None)
-    )
+    batches = list(reader.read(make_elevation_spec("raw_data", bbox=SINGLE_TILE_BBOX), since=None))
     assert all(len(b) <= 3 for b in batches)
     assert sum(len(b) for b in batches) > 3  # more than one batch
 
@@ -166,7 +174,7 @@ def test_read_since_collects_only_tiles_strictly_after():
 
     rows = [r for b in reader.read(spec, since=Cursor("n42w088")) for r in b]
 
-    assert reader.client.downloaded == ["n43w088"]
+    assert fake_client(reader).downloaded == ["n43w088"]
     assert {r["source_tile"] for r in rows} == {"n43w088"}
 
 
@@ -175,7 +183,7 @@ def test_read_since_at_the_frontier_downloads_nothing():
     spec = make_elevation_spec("raw_data", bbox=TWO_TILE_BBOX)
 
     assert list(reader.read(spec, since=Cursor("n43w088"))) == []
-    assert reader.client.downloaded == []
+    assert fake_client(reader).downloaded == []
 
 
 def test_read_skips_tiles_missing_at_source():
@@ -185,7 +193,7 @@ def test_read_skips_tiles_missing_at_source():
     rows = [r for b in reader.read(spec, since=None) for r in b]
 
     assert {r["source_tile"] for r in rows} == {"n42w088"}
-    assert reader.client.downloaded == ["n42w088"]
+    assert fake_client(reader).downloaded == ["n42w088"]
 
 
 # ------------------------------------------------------------------ extract_cursor

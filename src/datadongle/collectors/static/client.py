@@ -182,23 +182,30 @@ class StaticFileClient:
     def _iter_xlsx(filepath: Path, file_ref: FileRef) -> Iterator[dict[str, str]]:
         import openpyxl  # imported lazily; only needed for xlsx manifests
 
-        workbook = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
-        try:
-            if isinstance(file_ref.sheet, int):
-                sheet = workbook.worksheets[file_ref.sheet]
-            else:
-                sheet = workbook[file_ref.sheet]
+        # Pass a file object rather than a path: openpyxl validates the
+        # *extension* of path arguments, and downloads land in temp files named
+        # ".download". Format is declared on the FileRef, never inferred from
+        # the filename.
+        with open(filepath, "rb") as fh:
+            workbook = openpyxl.load_workbook(fh, read_only=True, data_only=True)
+            try:
+                if isinstance(file_ref.sheet, int):
+                    sheet = workbook.worksheets[file_ref.sheet]
+                else:
+                    sheet = workbook[file_ref.sheet]
 
-            rows = sheet.iter_rows(min_row=file_ref.skip_rows + 1, values_only=True)
-            header_cells = next(rows, None)
-            if header_cells is None:
-                return
-            columns = [sanitize_column_name(str(c)) for c in header_cells if c is not None]
+                rows = sheet.iter_rows(min_row=file_ref.skip_rows + 1, values_only=True)
+                header_cells = next(rows, None)
+                if header_cells is None:
+                    return
+                columns = [sanitize_column_name(str(c)) for c in header_cells if c is not None]
 
-            for cells in rows:
-                yield {col: _cell_to_str(value) for col, value in zip(columns, cells, strict=True)}
-        finally:
-            workbook.close()
+                for cells in rows:
+                    yield {
+                        col: _cell_to_str(value) for col, value in zip(columns, cells, strict=True)
+                    }
+            finally:
+                workbook.close()
 
 
 def _cell_to_str(value) -> str:

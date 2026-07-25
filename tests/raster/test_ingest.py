@@ -13,8 +13,9 @@ import struct
 import numpy as np
 import pytest
 import rasterio
-from datadongle.raster.ingest import iter_tiles
 from rasterio.transform import from_origin
+
+from datadongle.raster.ingest import iter_tiles
 
 # Synthetic DEM geometry: 600 rows x 500 cols, 10 m, north-up, NAD83.
 WIDTH, HEIGHT = 500, 600

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from datadongle.core.write_mode import Append, SCD2, Upsert, WriteMode
+from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 
 
 def test_append_is_a_write_mode():

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
+from datadongle.collectors.osm.client import OSMClient
 from datadongle.collectors.osm.query import OverpassAPIQuery
 from datadongle.collectors.osm.reader import (
     OSMReader,
@@ -29,7 +31,7 @@ def _query() -> OverpassAPIQuery:
 
 
 def _spec(**kw) -> OSMDatasetSpec:
-    base = dict(name="chi_cafes", target_table="chi_cafes", query=_query())
+    base: dict[str, Any] = dict(name="chi_cafes", target_table="chi_cafes", query=_query())
     base.update(kw)
     return OSMDatasetSpec(**base)
 
@@ -46,18 +48,28 @@ class _FakeClient:
         return {"elements": self._elements}
 
 
+def _as_client(fake: _FakeClient) -> OSMClient:
+    """_FakeClient duck-types OSMClient rather than subclassing it."""
+    return cast(OSMClient, fake)
+
+
+def _fake_client(reader: OSMReader) -> _FakeClient:
+    """The fake behind a reader, typed so its recorded calls are visible."""
+    return cast(_FakeClient, reader.client)
+
+
 # ------------------------------------------------------------------ metadata bits
 
 
 def test_target_and_dataset_id():
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     spec = _spec(target_schema="raw_data")
     assert reader.dataset_id(spec) == "chi_cafes"
     assert reader.target(spec) == TableRef("chi_cafes", "raw_data")
 
 
 def test_schema_fixed_columns_plus_promoted_tags():
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     schema = reader.schema(_spec(promoted_tags=["name", "addr:street"]))
 
     assert schema.column_names() == [
@@ -84,27 +96,27 @@ def test_schema_fixed_columns_plus_promoted_tags():
 
 
 def test_write_mode_full_enables_invalidate_missing():
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     assert reader.write_mode(_spec(), mode="full") == SCD2(
         entity_key=["osm_type", "osm_id"], invalidate_missing=True
     )
 
 
 def test_write_mode_incremental_disables_invalidate_missing():
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     assert reader.write_mode(_spec(), mode="incremental") == SCD2(
         entity_key=["osm_type", "osm_id"], invalidate_missing=False
     )
 
 
 def test_cursor_spec_is_ingested_at():
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     assert reader.cursor_spec(_spec()) == CursorSpec(column="ingested_at")
 
 
 def test_extract_cursor_is_always_none():
     # The HWM is the engine-stamped ingested_at, read back from the table.
-    reader = OSMReader(client=_FakeClient([]))
+    reader = OSMReader(client=_as_client(_FakeClient([])))
     assert reader.extract_cursor([{"osm_id": 1}]) is None
     assert reader.extract_cursor([]) is None
 
@@ -154,9 +166,7 @@ def test_element_to_row_transforms():
 
 
 def test_element_to_row_node_ids_json_encoded():
-    row = _element_to_row(
-        {"type": "way", "id": 7, "nodes": [1, 2, 3], "geometry": []}, _spec()
-    )
+    row = _element_to_row({"type": "way", "id": 7, "nodes": [1, 2, 3], "geometry": []}, _spec())
     assert row["node_ids"] == "[1, 2, 3]"
 
 
@@ -185,7 +195,7 @@ def test_read_full_sends_no_date_filter_and_batches():
         for i in range(5)
     ]
     client = _FakeClient(elements)
-    reader = OSMReader(client=client, batch_size=2)
+    reader = OSMReader(client=_as_client(client), batch_size=2)
 
     batches = list(reader.read(_spec(), since=None))
 
@@ -198,7 +208,7 @@ def test_read_full_sends_no_date_filter_and_batches():
 
 def test_read_incremental_passes_overpass_date_filter():
     client = _FakeClient([{"type": "node", "id": 1, "lon": 0.0, "lat": 0.0, "tags": {}}])
-    reader = OSMReader(client=client)
+    reader = OSMReader(client=_as_client(client))
 
     list(reader.read(_spec(), since=Cursor("2026-07-01T00:00:00.000000")))
 
@@ -239,6 +249,17 @@ class _FakeEngine:
     def ensure_table(self, target, schema, mode):
         self.calls["ensure"] = (target, schema, mode)
 
+    # unused by the driver in these tests
+    def query(self, sql, params=None): ...
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
+
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)
         return self._hwm
@@ -253,7 +274,7 @@ def test_osm_reader_drives_full_through_run_collection():
         {"type": "node", "id": 1, "lon": 0.0, "lat": 0.0, "tags": {"amenity": "cafe"}},
         {"type": "node", "id": 2, "lon": 1.0, "lat": 1.0, "tags": {"amenity": "cafe"}},
     ]
-    reader = OSMReader(client=_FakeClient(elements))
+    reader = OSMReader(client=_as_client(_FakeClient(elements)))
     engine = _FakeEngine()
     spec = _spec(target_schema="raw_data")
 
@@ -274,7 +295,9 @@ def test_osm_reader_drives_full_through_run_collection():
 
 def test_osm_reader_drives_incremental_and_uses_table_hwm():
     reader = OSMReader(
-        client=_FakeClient([{"type": "node", "id": 3, "lon": 0.0, "lat": 0.0, "tags": {}}])
+        client=_as_client(
+            _FakeClient([{"type": "node", "id": 3, "lon": 0.0, "lat": 0.0, "tags": {}}])
+        )
     )
     engine = _FakeEngine(hwm=Cursor("2026-06-01T00:00:00.000000"))
     spec = _spec(target_schema="raw_data")
@@ -288,5 +311,5 @@ def test_osm_reader_drives_incremental_and_uses_table_hwm():
     # incremental run does not invalidate missing entities
     assert engine.calls["open"][2].invalidate_missing is False
     # the table's HWM became the Overpass (newer:) floor
-    assert reader.client.calls[0]["date_filter"] == "2026-06-01T00:00:00Z"
+    assert _fake_client(reader).calls[0]["date_filter"] == "2026-06-01T00:00:00Z"
     assert summary["rows_merged"] == 1

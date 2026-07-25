@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import cast
 
 import pytest
 
+from datadongle.collectors.census.client import CensusClient
 from datadongle.collectors.census.driver import run_census_collection
 from datadongle.collectors.census.reader import CensusReader
 from datadongle.core.engine import TableRef
@@ -21,11 +23,15 @@ from datadongle.engines.iceberg import IcebergEngine
 from ..common import NoopTracker
 from .helpers import DATASET, FakeCensusClient, make_spec, seeded_source
 
-
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=["iceberg", "postgres"])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def census_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":
@@ -50,7 +56,8 @@ def census_engine(request, tmp_path):
         eng.execute(f"create schema {schema}")
     except Exception as e:  # pragma: no cover - depends on external DB
         pytest.skip(f"no usable test Postgres: {e}")
-    eng._test_schema = schema
+    # Stashed on the engine so tests can find it via _schema_name below.
+    eng._test_schema = schema  # ty: ignore[unresolved-attribute]
     try:
         yield eng
     finally:
@@ -63,11 +70,12 @@ def _schema_name(engine) -> str:
 
 
 def _run(engine, spec, source, tracker=None, fail_state=None):
-    def factory():
+    def factory() -> CensusClient:
         client = FakeCensusClient(source)
         if fail_state is not None:
             client.fail_states.add(fail_state)
-        return client
+        # FakeCensusClient duck-types CensusClient rather than subclassing it.
+        return cast(CensusClient, client)
 
     reader = CensusReader(client_factory=factory)
     return run_census_collection(reader, spec, engine, tracker=tracker)

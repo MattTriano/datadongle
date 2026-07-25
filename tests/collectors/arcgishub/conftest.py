@@ -84,3 +84,8 @@ class FakeArcGISHubClient:
     def factory(self):
         """A client_factory that ignores base_url and returns this fake."""
         return lambda base_url: self
+
+
+def query_params(fake: FakeArcGISHubClient) -> list[dict[str, Any]]:
+    """Params of the /query calls ``fake`` recorded, in order."""
+    return [p for (url, p) in fake.calls if url.endswith("/query") and p is not None]

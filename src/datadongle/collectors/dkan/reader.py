@@ -132,6 +132,7 @@ class DKANReader:
         multi-dataset families, so a delisted entity is closed out only when
         the pull genuinely observed every entity.
         """
+        assert spec.entity_key is not None  # DKANDatasetSpec requires it
         return SCD2(
             entity_key=spec.entity_key,
             invalidate_missing=spec.invalidate_missing and mode == "full",

@@ -35,9 +35,7 @@ class Upsert(WriteMode):
         if not self.keys:
             raise ValueError("Upsert requires at least one key column.")
         if self.on_conflict not in ("update", "nothing"):
-            raise ValueError(
-                f"on_conflict must be 'update' or 'nothing', got {self.on_conflict!r}"
-            )
+            raise ValueError(f"on_conflict must be 'update' or 'nothing', got {self.on_conflict!r}")
 
 
 @dataclass(frozen=True)

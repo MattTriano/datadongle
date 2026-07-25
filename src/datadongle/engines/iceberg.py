@@ -42,7 +42,7 @@ import pyarrow.parquet as pq
 
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
-from datadongle.core.schema import Column, ColumnType, TableSchema
+from datadongle.core.schema import ColumnType, TableSchema
 from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 
 logger = logging.getLogger(__name__)
@@ -182,9 +182,7 @@ class IcebergEngine:
             fields.append(pa.field("load_id", pa.string()))
         return pa.schema(fields)
 
-    def ensure_table(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> None:
+    def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None:
         if self.table_exists(target):
             return
         self.catalog.create_namespace_if_not_exists(self._namespace(target))
@@ -234,7 +232,7 @@ class IcebergEngine:
 
     def open_write(
         self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> "IcebergWriteSession":
+    ) -> IcebergWriteSession:
         if not isinstance(mode, (Append, Upsert, SCD2)):
             raise TypeError(f"Unsupported write mode for IcebergEngine: {mode!r}")
         return IcebergWriteSession(self, target, schema, mode)
@@ -306,7 +304,7 @@ class IcebergEngine:
                     f"select * exclude (rn) from ("
                     f"  select *, row_number() over (partition by {partition} "
                     f"    order by effective_from desc, ingested_at desc, load_id desc) rn "
-                    f"  from \"{target.name}\") "
+                    f'  from "{target.name}") '
                     f"where rn = 1 and record_hash <> '{_TOMBSTONE_HASH}'"
                 )
         return con.sql(sql).to_df()
@@ -333,13 +331,13 @@ class IcebergEngine:
 
         first = next(iter(geom))
         for name in geom:
-            df[name] = df[name].apply(lambda v: shapely.from_wkb(bytes(v)) if v is not None else None)
+            df[name] = df[name].apply(
+                lambda v: shapely.from_wkb(bytes(v)) if v is not None else None
+            )
         srid = geom[first]
         return gpd.GeoDataFrame(df, geometry=first, crs=f"EPSG:{srid}" if srid else None)
 
-    def read_high_water_mark(
-        self, target: TableRef, cursor: CursorSpec
-    ) -> Cursor | None:
+    def read_high_water_mark(self, target: TableRef, cursor: CursorSpec) -> Cursor | None:
         if not self.table_exists(target):
             return None
         # Scan only the cursor column(s): the HWM read must stay cheap even on
@@ -352,7 +350,7 @@ class IcebergEngine:
         con.register("hist", arrow)
         value_expr = self._hwm_value_expr(arrow.schema, cursor.column)
         row = con.sql(
-            f'select {value_expr} as hwm from hist '
+            f"select {value_expr} as hwm from hist "
             f'where "{cursor.column}" is not null '
             f'order by "{cursor.column}" desc limit 1'
         ).fetchone()
@@ -364,7 +362,7 @@ class IcebergEngine:
         if cursor.tiebreak:
             tb = con.sql(
                 f'select "{cursor.tiebreak}"::varchar as tb from hist '
-                f"where {value_expr} = ? and \"{cursor.tiebreak}\" is not null "
+                f'where {value_expr} = ? and "{cursor.tiebreak}" is not null '
                 f'order by "{cursor.tiebreak}" desc limit 1',
                 params=[hwm_value],
             ).fetchone()
@@ -441,7 +439,7 @@ class IcebergWriteSession:
         self.rows_staged += len(rows)
         return len(rows)
 
-    def __enter__(self) -> "IcebergWriteSession":
+    def __enter__(self) -> IcebergWriteSession:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -477,6 +475,7 @@ class IcebergWriteSession:
         Unlike the append paths, PyIceberg's ``upsert`` needs the full incoming
         set in memory to compute matches, so this path is not streamed.
         """
+        assert isinstance(self._mode, Upsert)  # dispatched on in _flush
         new_rows = con.sql(select_typed).to_arrow_table().cast(table.schema().as_arrow())
         if not new_rows.num_rows:
             self.rows_merged = 0
@@ -497,6 +496,7 @@ class IcebergWriteSession:
         ``invalidate_missing`` (full pulls only), entities absent from this
         pull are then tombstoned.
         """
+        assert isinstance(self._mode, SCD2)  # dispatched on in _flush
         entity_key = self._mode.entity_key
         hist = table.scan(selected_fields=(*entity_key, "record_hash")).to_arrow()
         con.register("hist", hist)
@@ -526,6 +526,7 @@ class IcebergWriteSession:
         ``record_hash = _TOMBSTONE_HASH`` so ``read_current`` stops surfacing
         it while ``read_history`` keeps the record. Returns the count appended.
         """
+        assert isinstance(self._mode, SCD2)  # only reached from _flush_scd2
         table = self._engine._load(self._target)  # latest snapshot
         entity_key = self._mode.entity_key
         con = self._engine._duckdb()
@@ -587,10 +588,7 @@ class IcebergWriteSession:
                 values = [_raster_to_bytes(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.binary())
             else:
-                values = [
-                    None if r.get(col.name) is None else str(r.get(col.name))
-                    for r in rows
-                ]
+                values = [None if r.get(col.name) is None else str(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.string())
         return pa.table(columns)
 
@@ -601,8 +599,7 @@ class IcebergWriteSession:
         in memory. The path is engine-controlled (a temp name), not user input.
         """
         con.execute(
-            f"create or replace view incoming as "
-            f"select * from read_parquet('{self._stage_path}')"
+            f"create or replace view incoming as select * from read_parquet('{self._stage_path}')"
         )
 
     def _stream_append(self, table, con, sql: str) -> int:
@@ -646,6 +643,7 @@ class IcebergWriteSession:
 
     def _hash_expr(self) -> str:
         """MD5 over the semantic columns (excludes entity_key + metadata cols)."""
+        assert isinstance(self._mode, SCD2)  # only reached on the SCD2 path
         exclude = set(self._mode.entity_key) | self._schema.metadata_column_names()
         blob_cols = set(self._schema.geometry) | self._schema.raster_column_names()
         parts = []

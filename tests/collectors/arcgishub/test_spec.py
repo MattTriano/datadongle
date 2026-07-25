@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from datadongle.collectors.arcgishub.spec import ArcGISHubDatasetSpec
 
 
 def _spec(**over) -> ArcGISHubDatasetSpec:
-    base = {
+    base: dict[str, Any] = {
         "name": "tps_arrests",
         "base_url": "https://data.example.ca",
         "item_id": "item123",

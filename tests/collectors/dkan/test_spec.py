@@ -23,9 +23,7 @@ def test_requires_target_table():
 
 def test_requires_entity_key():
     with pytest.raises(ValueError, match="entity_key"):
-        DKANDatasetSpec(
-            name="x", base_url="https://p", dataset_identifiers=["a"], target_table="x"
-        )
+        DKANDatasetSpec(name="x", base_url="https://p", dataset_identifiers=["a"], target_table="x")
 
 
 def test_rejects_unknown_retrieval_mode():

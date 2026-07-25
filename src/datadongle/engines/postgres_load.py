@@ -42,7 +42,7 @@ class StagedIngest:
 
     def __init__(
         self,
-        engine: "PostgresEngine",
+        engine: PostgresEngine,
         target_table: str,
         target_schema: str,
         conflict_column: str | list[str] | None = None,
@@ -140,7 +140,7 @@ class StagedIngest:
     # Context manager
     # ------------------------------------------------------------------
 
-    def __enter__(self) -> "StagedIngest":
+    def __enter__(self) -> StagedIngest:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
@@ -179,6 +179,7 @@ class StagedIngest:
         otherwise a plain append. The whole merge runs in a single
         transaction so it is atomic.
         """
+        assert self._columns is not None and self._col_list is not None  # set in __enter__
         with self._engine.cursor() as cur:
             if self._entity_key:
                 result = scd2_merge(
@@ -260,6 +261,7 @@ class StagedIngest:
         return all_columns
 
     def _rows_to_copy_buffer(self, rows: list[dict[str, Any]]) -> io.StringIO:
+        assert self._columns is not None  # set in __enter__
         buf = io.StringIO()
         for row in rows:
             vals = []
@@ -326,9 +328,7 @@ def append_merge(
     No key, no conflict handling — the target accumulates every row it is
     given, duplicates included. Returns the number of rows inserted.
     """
-    cur.execute(
-        f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}"
-    )
+    cur.execute(f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}")
     rows_merged = cur.rowcount
     logger.info("Merged %d rows into %s", rows_merged, fqn)
     return rows_merged
@@ -352,9 +352,7 @@ def upsert_merge(
     non-key columns from the incoming row). Returns the number of rows
     inserted or updated.
     """
-    insert_sql = (
-        f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}"
-    )
+    insert_sql = f"insert into {fqn} ({col_list}) select {col_list} from {staging_table}"
     conflict_clause = ", ".join(f'"{c}"' for c in conflict_columns)
     if conflict_action.upper() == "UPDATE":
         update_cols = [c for c in columns if c not in conflict_columns]
@@ -409,9 +407,7 @@ def scd2_merge(
     result = Scd2Result()
 
     # 1. Compute record_hash on staging rows
-    cur.execute(
-        f'alter table {staging_table} add column if not exists "record_hash" text'
-    )
+    cur.execute(f'alter table {staging_table} add column if not exists "record_hash" text')
     cur.execute(f'update {staging_table} set "record_hash" = {hash_expr}')
 
     # 2. Invalidate current target rows whose entity_key is absent
@@ -446,8 +442,7 @@ def scd2_merge(
     """)
     rows_deduped = cur.rowcount
     logger.info(
-        "SCD2: dropped %d staging rows whose (entity_key, record_hash) "
-        "already exists in %s",
+        "SCD2: dropped %d staging rows whose (entity_key, record_hash) already exists in %s",
         rows_deduped,
         fqn,
     )
@@ -482,8 +477,7 @@ def scd2_merge(
     result.rows_merged = cur.rowcount
 
     logger.info(
-        "SCD2: inserted %d new versions into %s "
-        "(staged %d, deduped %d, invalidated %d, closed %d)",
+        "SCD2: inserted %d new versions into %s (staged %d, deduped %d, invalidated %d, closed %d)",
         result.rows_merged,
         fqn,
         rows_staged,

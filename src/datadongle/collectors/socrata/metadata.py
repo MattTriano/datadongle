@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 import requests
+
 from datadongle.collectors.socrata.spec import SocrataDatasetSpec
 
 
@@ -310,7 +311,7 @@ class SocrataTableMetadata:
 
     @cached_property
     def has_data_columns(self) -> bool:
-        table_data_cols = self.resource_metadata.get("columns_name")
+        table_data_cols = self.resource_metadata.get("columns_name") or []
         return len(table_data_cols) != 0
 
     @cached_property

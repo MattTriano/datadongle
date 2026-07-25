@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from typing import Any
 
 import requests
 from requests.exceptions import ChunkedEncodingError, ConnectionError, HTTPError, ReadTimeout
@@ -14,7 +15,11 @@ from tenacity import (
     wait_exponential,
 )
 
-from datadongle.collectors.census.spec import GEOGRAPHY_CONFIG, MAX_VARIABLES_PER_CALL, CensusDatasetSpec
+from datadongle.collectors.census.spec import (
+    GEOGRAPHY_CONFIG,
+    MAX_VARIABLES_PER_CALL,
+    CensusDatasetSpec,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,8 +73,11 @@ class CensusClient:
         wait=wait_exponential(multiplier=1, max=10),
         before_sleep=before_sleep_log(logger, logging.WARNING),
     )
-    def _get_json(self, url: str, params: dict | None = None) -> list[list[str]]:
-        """Fetch JSON from the Census API. Returns the raw list-of-lists response.
+    def _get_json(self, url: str, params: dict | None = None) -> Any:
+        """Fetch JSON from the Census API.
+
+        Shape depends on the endpoint: the data endpoints return a list of
+        lists (header row first), the metadata endpoints a dict.
 
         Retries transient HTTP failures (429/5xx, connection/read errors) with
         exponential backoff.
@@ -152,7 +160,7 @@ class CensusClient:
         variables: list[str],
         geography_level: str,
         state_fips: str,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, str | None]]:
         """
         Fetch census data for a list of variables, one state at a time.
 
@@ -223,7 +231,7 @@ class CensusClient:
         variables: list[str],
         for_clause: str,
         in_clause: str | None,
-    ) -> list[dict[str, str]]:
+    ) -> list[dict[str, str | None]]:
         """Fetch a single chunk of variables from the API."""
         get_param = ",".join(["NAME"] + variables)
         url = f"{self.BASE}/{vintage}/{dataset}"
@@ -248,7 +256,7 @@ class CensusClient:
         header = raw[0]
         rows = []
         for row_data in raw[1:]:
-            rows.append(dict(zip(header, row_data)))
+            rows.append(dict(zip(header, row_data, strict=True)))
         return rows
 
     @staticmethod

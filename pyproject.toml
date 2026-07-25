@@ -1,8 +1,11 @@
 [project]
 name = "datadongle"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Installable data-collector tooling: source collectors, pluggable storage engines, and staged-ingest/SCD2 load strategies."
 readme = "README.md"
+authors = [{ name = "Matt Triano" }]
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "pandas",
@@ -11,14 +14,38 @@ dependencies = [
     "tenacity",
     "pyyaml",
     "ijson>=3.5.0",
+    "openpyxl>=3.1.5",
 ]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/matttriano/datadongle"
+Repository = "https://github.com/matttriano/datadongle"
+Documentation = "https://github.com/matttriano/datadongle#readme"
+Issues = "https://github.com/matttriano/datadongle/issues"
 
 [project.optional-dependencies]
 # Relational storage engine (PostgresEngine / MySQLEngine).
 postgres = [
     "psycopg2-binary",
+]
+mysql = [
     "pymysql",
 ]
+
 # Geospatial parsing/handling used across collectors and parsers.
 geo = [
     "shapely",
@@ -27,22 +54,26 @@ geo = [
     "rasterio",
     "networkx",
 ]
+
 # Iceberg storage engine (added in the IcebergEngine work).
 iceberg = [
     "pyiceberg[sql-sqlite]",
     "duckdb",
     "pyarrow",
 ]
+all = ["datadongle[postgres,mysql,geo,iceberg]"]
 
 [dependency-groups]
 dev = [
     "pytest",
     "ruff>=0.15.20",
     "ty>=0.0.56",
+    "zizmor",
+    "pip-audit",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -51,7 +82,51 @@ packages = ["src/datadongle"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = '-m "not network"'
+addopts = '-ra -m "not network and not postgres"'
 markers = [
-    "network:  test requires network egress (deselected by default, run with -m network)"
+    "network:  test requires network egress (deselected by default, run with -m network)",
+    "postgres: requires a live PostgreSQL instance (deselected by default; run with -m postgres)",
 ]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "F",   # pyflakes (unused imports, undefined names, etc.)
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (use modern Python syntax)
+    "B",   # flake8-bugbear (common bug patterns)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "datadongle",
+]
+
+
+[tool.ty.environment]
+python-version = "3.13"
+
+[tool.ty.analysis]
+allowed-unresolved-imports = ["fiona.**", "rasterio.**", "pyiceberg.**"]
+
+[tool.ty.rules]
+unresolved-import = "warn"
+
+[tool.ty.terminal]
+error-on-warning = false
+
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"

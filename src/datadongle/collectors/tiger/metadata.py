@@ -196,7 +196,7 @@ class TigerMetadata:
 
     BASE = "https://www2.census.gov/geo/tiger"
 
-    def __init__(self, client: "TigerClient | None" = None):
+    def __init__(self, client: TigerClient | None = None):
         if client is None:
             from datadongle.collectors.tiger.client import TigerClient
 

@@ -13,6 +13,7 @@ import struct
 
 import numpy as np
 import pytest
+
 from datadongle.raster.wkb import to_hexwkb
 
 

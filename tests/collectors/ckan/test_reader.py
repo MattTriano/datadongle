@@ -6,9 +6,11 @@ import json
 import logging
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
+from datadongle.collectors.ckan.client import CKANClient
 from datadongle.collectors.ckan.metadata import CKANResource
 from datadongle.collectors.ckan.reader import (
     CKANReader,
@@ -64,7 +66,7 @@ def _resource(
 
 
 def _spec(**kw) -> CKANDatasetSpec:
-    base = dict(
+    base: dict[str, Any] = dict(
         name="food_inspections",
         base_url="https://portal.example.gov",
         dataset_id="food-inspections",
@@ -122,7 +124,8 @@ class _FakeClient:
 
 
 def _reader(client: _FakeClient) -> CKANReader:
-    return CKANReader(client_factory=lambda base_url: client)
+    # _FakeClient duck-types CKANClient rather than subclassing it.
+    return CKANReader(client_factory=lambda base_url: cast(CKANClient, client))
 
 
 # ------------------------------------------------------------------ metadata bits
@@ -165,9 +168,7 @@ def test_schema_from_datastore_fields():
         {"id": "shift_start", "type": "time"},  # unmapped -> TEXT
         {"id": "_id", "type": "int"},  # internal -> excluded
     ]
-    client = _FakeClient(
-        resources=[_resource(datastore=True)], datastore_fields={"res-1": fields}
-    )
+    client = _FakeClient(resources=[_resource(datastore=True)], datastore_fields={"res-1": fields})
     schema = _reader(client).schema(_spec())
 
     by_name = {c.name: c for c in schema.columns}
@@ -347,6 +348,17 @@ class _FakeEngine:
 
     def ensure_table(self, target, schema, mode):
         self.calls["ensure"] = (target, schema, mode)
+
+    # unused by the driver in these tests
+    def query(self, sql, params=None): ...
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
 
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)

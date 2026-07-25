@@ -11,8 +11,10 @@ from __future__ import annotations
 import io
 import tempfile
 from pathlib import Path
+from typing import Any, cast
 
 from datadongle.collectors.static.client import StaticFileClient, StaticFileDownloadError
+from datadongle.collectors.static.reader import StaticFileReader
 from datadongle.collectors.static.spec import FileRef, StaticFileDatasetSpec
 
 
@@ -79,9 +81,14 @@ def default_files() -> dict[str, bytes]:
     }
 
 
+def fake_client(reader: StaticFileReader) -> FakeStaticFileClient:
+    """The fake behind a reader, typed so its test-only knobs are visible."""
+    return cast(FakeStaticFileClient, reader.client)
+
+
 def make_spec(schema: str = "raw_data", **overrides) -> StaticFileDatasetSpec:
     """Build a spec against the given schema with sensible defaults."""
-    defaults = dict(
+    defaults: dict[str, Any] = dict(
         name="test_static_systems",
         target_table="test_static_systems",
         target_schema=schema,

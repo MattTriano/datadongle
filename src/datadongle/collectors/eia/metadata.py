@@ -161,6 +161,5 @@ class EIAMetadata:
     @staticmethod
     def _entry_matches(entry: dict, needle: str) -> bool:
         return any(
-            needle in str(entry.get(field) or "").lower()
-            for field in ("id", "name", "description")
+            needle in str(entry.get(field) or "").lower() for field in ("id", "name", "description")
         )

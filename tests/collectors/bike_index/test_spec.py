@@ -1,6 +1,7 @@
 """Tests for BikeIndexDatasetSpec."""
 
 import pytest
+
 from datadongle.collectors.bike_index.spec import BikeIndexDatasetSpec
 
 

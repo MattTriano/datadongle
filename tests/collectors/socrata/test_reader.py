@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 from datadongle.collectors.socrata.reader import SocrataReader
@@ -28,7 +29,7 @@ def _reader_with_meta(dataset_id: str, columns, domain="data.example.org"):
 
 
 def _spec(**kw) -> SocrataDatasetSpec:
-    base = dict(name="permits", dataset_id="abcd-1234", target_table="permits")
+    base: dict[str, Any] = dict(name="permits", dataset_id="abcd-1234", target_table="permits")
     base.update(kw)
     return SocrataDatasetSpec(**base)
 
@@ -121,9 +122,7 @@ def test_build_where_none_for_full_read():
 
 def test_build_where_with_tiebreak():
     where = SocrataReader._build_where(":updated_at", Cursor("2024-01-01", "5"))
-    assert where == (
-        "(:updated_at = '2024-01-01' AND :id > '5') OR (:updated_at > '2024-01-01')"
-    )
+    assert where == ("(:updated_at = '2024-01-01' AND :id > '5') OR (:updated_at > '2024-01-01')")
 
 
 def test_build_where_without_tiebreak():
@@ -217,6 +216,17 @@ class _FakeEngine:
 
     def ensure_table(self, target, schema, mode):
         self.calls["ensure"] = (target, schema, mode)
+
+    # unused by the driver in these tests
+    def query(self, sql, params=None): ...
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
 
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)

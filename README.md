@@ -1,5 +1,10 @@
 # datadongle
 
+[![CI](https://github.com/matttriano/datadongle/actions/workflows/ci.yml/badge.svg)](https://github.com/matttriano/datadongle/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/datadongle.svg)](https://pypi.org/project/datadongle/)
+[![Python versions](https://img.shields.io/pypi/pyversions/datadongle.svg)](https://pypi.org/project/datadongle/)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/matttriano/datadongle/blob/main/LICENSE)
+
 Installable data-collector tooling: **source collectors**, **pluggable storage engines**, and **staged-ingest / SCD2 load strategies** — decoupled so you can mix and match.
 
 A collector says *what* to pull (a Socrata dataset, say). A **write mode** says *how* new rows should reconcile with what's already stored (append, upsert, or keep versioned history). A **storage engine** decides *where* and *physically how* that happens (Postgres/PostGIS or a local Iceberg warehouse). These three axes are independent: the same collector runs unchanged onto either engine, under any compatible write mode.
@@ -16,13 +21,26 @@ A collector says *what* to pull (a Socrata dataset, say). A **write mode** says 
 
 ## Installation
 
-datadongle is a [`uv`](https://docs.astral.sh/uv/)-managed package targeting **Python ≥ 3.13**. Storage backends and geo support are optional extras — install only what you need.
+datadongle targets **Python ≥ 3.13**. The base install is deliberately lean; storage backends and geo support are optional extras — install only what you need.
 
 | Extra | Pulls in | Needed for |
 |-----------|-------------------------------------------------|-----------------------------------------------|
-| `postgres` | `psycopg2-binary`, `pymysql` | `PostgresEngine` (and `MySQLEngine`) |
+| `postgres` | `psycopg2-binary` | `PostgresEngine` |
+| `mysql` | `pymysql` | `MySQLEngine` |
 | `iceberg` | `pyiceberg[sql-sqlite]`, `duckdb`, `pyarrow` | `IcebergEngine` |
 | `geo` | `shapely`, `geopandas`, `fiona`, `rasterio`, … | geometry columns on **either** engine |
+| `all` | all of the above | everything |
+
+For end users installing from PyPI:
+
+```bash
+pip install datadongle                    # base
+pip install "datadongle[postgres]"        # Postgres storage engine
+pip install "datadongle[iceberg,geo]"     # Iceberg + geometry support
+pip install "datadongle[all]"             # everything
+```
+
+For local development with [`uv`](https://docs.astral.sh/uv/) (see [Contributing](#contributing)):
 
 ```bash
 # Postgres target with geometry support
@@ -31,7 +49,7 @@ uv sync --extra postgres --extra geo
 # Local Iceberg target with geometry support
 uv sync --extra iceberg --extra geo
 
-# everything
+# everything (all extras + dev tools)
 uv sync --all-extras
 ```
 
@@ -177,11 +195,35 @@ Needs the `iceberg` extra (and `geo` for geometry). No native DuckDB extensions 
 
 ---
 
+## Contributing
+
+Contributions are welcome. This project uses [`uv`](https://docs.astral.sh/uv/) for dependency management; a dynamic version derived from git tags via [hatch-vcs](https://github.com/ofek/hatch-vcs) (there is no version string to edit).
+
+```bash
+git clone https://github.com/matttriano/datadongle
+cd datadongle
+uv sync --all-extras        # installs the project, all extras, and dev tools
+```
+
+Before opening a pull request:
+
+```bash
+uv run ruff format .        # format
+uv run ruff check .         # lint
+uv run ty check             # type-check
+uv run pytest               # tests (network + live-DB tests deselected by default)
+```
+
+CI runs formatting, linting, type-checking, tests, a build check, and security scans (gitleaks, zizmor, pip-audit) on every pull request. Changes under `.github/` require review from a code owner.
+
+---
+
 ## Testing
 
 ```bash
 uv run pytest                      # hermetic tests (Iceberg + unit); network + DB tests skip
 uv run pytest -m network           # opt in to the network-marked tests
+uv run pytest -m postgres          # opt in to the live-Postgres tests (see below)
 ```
 
 - **Iceberg tests are hermetic** — they build a warehouse under a `tmp_path`, so they run anywhere with no external service.
@@ -190,7 +232,37 @@ uv run pytest -m network           # opt in to the network-marked tests
   ```bash
   DWH_TEST_PGHOST=localhost DWH_TEST_PGPORT=5432 \
   DWH_TEST_PGDATABASE=dwh_test DWH_TEST_PGUSER=postgres DWH_TEST_PGPASSWORD=… \
-  uv run pytest tests/engines/test_conformance.py
+  uv run pytest -m postgres tests/engines/test_conformance.py
   ```
 
 - **Network-marked tests are deselected by default** (they need egress); run them explicitly with `-m network`.
+
+---
+
+## Releasing
+
+Versions are derived from git tags — there is no version string to edit. Every merge to `main` publishes an auto-versioned dev build (`X.Y.Z.devN`) to TestPyPI; a `v*` tag publishes a clean release to PyPI via Trusted Publishing (no stored tokens).
+
+### Rehearse on TestPyPI
+
+Merges to `main` publish to TestPyPI automatically. To verify an install from there (pulling real dependencies from PyPI, since TestPyPI doesn't host them):
+
+```bash
+uv run --no-project --with datadongle \
+  --index https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ \
+  -- python -c "import datadongle; print(datadongle.__version__)"
+```
+
+### Publish a release to PyPI
+
+Confirm `main` is green and the TestPyPI dev build looks right, then tag:
+
+```bash
+git checkout main
+git pull origin main
+git tag -a v0.1.0 -m "Release 0.1.0"
+git push origin v0.1.0
+```
+
+The tag triggers the release workflow, which runs tests, then publishes to PyPI after a required-reviewer approval. PyPI versions are **write-once** — to fix a broken release, bump the version and tag again.

@@ -143,6 +143,7 @@ class ThreeDEPReader:
         Sorted order is what makes ``source_tile`` a valid cursor: the max name
         in the target is always the frontier of a completed prefix.
         """
+        assert spec.bbox is not None  # ThreeDEPDatasetSpec requires it
         return sorted(spec.tiles) if spec.tiles is not None else tiles_for_bbox(spec.bbox)
 
     def available(self, spec: ThreeDEPDatasetSpec) -> bool:
@@ -153,9 +154,7 @@ class ThreeDEPReader:
     # Per-tile read
     # ------------------------------------------------------------------
 
-    def _read_tile(
-        self, spec: ThreeDEPDatasetSpec, name: str
-    ) -> Iterator[list[dict[str, Any]]]:
+    def _read_tile(self, spec: ThreeDEPDatasetSpec, name: str) -> Iterator[list[dict[str, Any]]]:
         """Download one 1-degree tile to a temp file and yield its sub-tile rows,
         clipped to the spec's bbox; the file is deleted when the tile is done."""
         tmp = tempfile.NamedTemporaryFile(suffix=".tif", prefix=f"3dep_{name}_", delete=False)
@@ -165,6 +164,7 @@ class ThreeDEPReader:
             self.client.download_tile(name, spec.product, path)
             batch: list[dict[str, Any]] = []
             b = spec.bbox
+            assert b is not None  # ThreeDEPDatasetSpec requires it
             for tile in iter_tiles(
                 str(path),
                 source_id=name,

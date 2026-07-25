@@ -13,10 +13,10 @@ per-source ``generate_ddl`` string building.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class ColumnType(str, Enum):
+class ColumnType(StrEnum):
     """Neutral column types, mapped per-engine to concrete storage types."""
 
     TEXT = "text"
@@ -66,9 +66,7 @@ class Column:
         if self.type is ColumnType.GEOMETRY and self.geometry is None:
             raise ValueError(f"Geometry column {self.name!r} requires a GeometrySpec.")
         if self.type is not ColumnType.GEOMETRY and self.geometry is not None:
-            raise ValueError(
-                f"Column {self.name!r} has a GeometrySpec but type is {self.type}."
-            )
+            raise ValueError(f"Column {self.name!r} has a GeometrySpec but type is {self.type}.")
 
 
 @dataclass

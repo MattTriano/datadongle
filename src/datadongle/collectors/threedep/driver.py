@@ -76,7 +76,9 @@ def run_threedep_collection(
     }
 
     if mode == "incremental":
-        since = engine.read_high_water_mark(target, reader.cursor_spec(spec))
+        cursor = reader.cursor_spec(spec)
+        assert cursor is not None  # ThreeDEPReader always declares one
+        since = engine.read_high_water_mark(target, cursor)
         if since is not None:
             remaining = [n for n in names if n > since.value]
             summary["tiles_skipped_present"] = len(names) - len(remaining)

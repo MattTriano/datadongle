@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import os
 import uuid as uuid_module
-from types import SimpleNamespace
 
 import pytest
 
@@ -30,16 +29,17 @@ import pytest
 @pytest.fixture(scope="session")
 def engine():
     try:
+        from datadongle.db.core import DatabaseCredentials
         from datadongle.engines.postgres import PostgresEngine
     except ImportError as e:
         pytest.skip(f"Could not import PostgresEngine — fix the import in conftest.py ({e})")
 
-    creds = SimpleNamespace(
+    creds = DatabaseCredentials(
         host=os.environ.get("DWH_TEST_PGHOST", "localhost"),
         port=int(os.environ.get("DWH_TEST_PGPORT", "5432")),
-        database=os.environ.get("DWH_TEST_PGDATABASE"),
-        username=os.environ.get("DWH_TEST_PGUSER"),
-        password=os.environ.get("DWH_TEST_PGPASSWORD"),
+        database=os.environ.get("DWH_TEST_PGDATABASE", ""),
+        username=os.environ.get("DWH_TEST_PGUSER", ""),
+        password=os.environ.get("DWH_TEST_PGPASSWORD", ""),
     )
     eng = PostgresEngine(creds)
     try:

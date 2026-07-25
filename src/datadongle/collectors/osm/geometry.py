@@ -94,6 +94,8 @@ def is_area(tags: dict[str, str]) -> bool:
 
         if rule_type == "all":
             return True
+        if values is None:  # only the "all" rules carry no value set
+            continue
         if rule_type == "whitelist" and value in values:
             return True
         if rule_type == "blacklist" and value not in values:

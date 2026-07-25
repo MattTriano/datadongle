@@ -140,7 +140,7 @@ class TigerReader:
         self._columns_cache[self._cache_key(spec, vintage)] = col_names
 
         columns: list[Column] = []
-        for name, fiona_type in zip(col_names, properties.values()):
+        for name, fiona_type in zip(col_names, properties.values(), strict=True):
             columns.append(Column(name, _fiona_to_column_type(fiona_type)))
 
         # County files sometimes encode the county only in the filename (e.g.
@@ -153,7 +153,11 @@ class TigerReader:
         if _has_geometry(geom_type):
             kind = _FIONA_GEOM_TO_KIND.get(geom_type, "Geometry")
             columns.append(
-                Column(_GEOMETRY_COLUMN, ColumnType.GEOMETRY, geometry=GeometrySpec(kind=kind, srid=4326))
+                Column(
+                    _GEOMETRY_COLUMN,
+                    ColumnType.GEOMETRY,
+                    geometry=GeometrySpec(kind=kind, srid=4326),
+                )
             )
         return TableSchema(columns=columns)
 
@@ -330,9 +334,7 @@ class TigerReader:
             cols.append(Column(self._fips_col(spec, "countyfp"), ColumnType.TEXT))
         return cols
 
-    def _synthetic_fips_values(
-        self, spec: TigerDatasetSpec, fips: str | None
-    ) -> dict[str, str]:
+    def _synthetic_fips_values(self, spec: TigerDatasetSpec, fips: str | None) -> dict[str, str]:
         """statefp/countyfp values to stamp on county rows that lack them."""
         if spec.scope != "county" or not fips or len(fips) != 5:
             return {}

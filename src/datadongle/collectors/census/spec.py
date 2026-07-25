@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from datadongle.collectors.base_spec import DatasetSpec
 
@@ -91,7 +92,7 @@ ALL_STATE_FIPS = [
 ]
 
 # Geography level -> Census API "for" clause and the geo ID columns returned
-GEOGRAPHY_CONFIG = {
+GEOGRAPHY_CONFIG: dict[str, dict[str, Any]] = {
     "state": {
         "for": "state:*",
         "geo_columns": ["state"],

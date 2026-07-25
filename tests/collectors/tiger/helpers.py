@@ -15,8 +15,11 @@ from __future__ import annotations
 import shutil
 import tempfile
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
+from datadongle.collectors.tiger.client import TigerClient
 from datadongle.collectors.tiger.metadata import TigerMetadata
 
 # The canonical TIGER base URL, so tests build the same URLs the reader does.
@@ -72,7 +75,9 @@ def write_shapefile_zip(
         for feat in features:
             geom = feat.get("geometry")
             props = {k: v for k, v in feat.items() if k != "geometry"}
-            dst.write({"geometry": mapping(geom) if geom is not None else None, "properties": props})
+            dst.write(
+                {"geometry": mapping(geom) if geom is not None else None, "properties": props}
+            )
 
     zip_path = directory / f"{stem}.zip"
     with zipfile.ZipFile(zip_path, "w") as z:
@@ -86,8 +91,8 @@ class FakeTigerClient:
     """Duck-types TigerClient against an in-memory URL map. No HTTP."""
 
     def __init__(self, files: dict[str, Path], listings: dict[str, str]) -> None:
-        self._files = files          # download URL -> local zip path
-        self._listings = listings    # directory URL -> HTML
+        self._files = files  # download URL -> local zip path
+        self._listings = listings  # directory URL -> HTML
         self.fail_urls: set[str] = set()
         self.download_calls: list[str] = []
 
@@ -107,3 +112,12 @@ class FakeTigerClient:
         tmp.close()
         shutil.copy(self._files[url], tmp.name)
         return Path(tmp.name)
+
+
+def as_client_factory(client: FakeTigerClient) -> Callable[[], TigerClient]:
+    """Wrap a fake as a ``TigerReader`` client_factory.
+
+    ``FakeTigerClient`` duck-types ``TigerClient`` rather than subclassing it,
+    so the cast is where that intent is stated for the type checker.
+    """
+    return lambda: cast(TigerClient, client)

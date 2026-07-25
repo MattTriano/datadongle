@@ -11,6 +11,7 @@ from urllib.parse import quote_plus
 import pandas as pd
 import psycopg2
 import pymysql
+import pymysql.cursors
 from tenacity import (
     retry,
     retry_if_exception_type,

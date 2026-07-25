@@ -99,8 +99,7 @@ class ArcGISHubClient:
         while next_url is not None:
             payload = self.get_json(next_url, params=next_params)
 
-            for feature in payload.get("features", []):
-                yield feature
+            yield from payload.get("features", [])
 
             # After the first request, `next` links are fully-qualified and
             # already carry their own query string -- don't re-send params.

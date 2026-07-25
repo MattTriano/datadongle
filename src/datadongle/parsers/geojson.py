@@ -65,7 +65,7 @@ def parse_geojson(
         from shapely.geometry import shape
 
         columns: list[str] | None = None
-        column_set: set[str] | None = None
+        column_set: set[str] = set()
         batch: list[dict[str, Any]] = []
         feature_index = 0
 

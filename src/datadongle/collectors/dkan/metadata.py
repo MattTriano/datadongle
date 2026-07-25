@@ -113,7 +113,7 @@ class DKANMetadata:
         print(f"  modified:   {ds.get('modified')}")
         for dist in self.distributions(ds):
             count = ""
-            if stats:
+            if stats and identifier:
                 count = f"  rows={self.client.row_count(identifier, index=dist.index):,}"
             print(f"  [{dist.index}] {dist.title or '(untitled)'} ({dist.media_type}){count}")
             if dist.download_url:

@@ -3,12 +3,15 @@
 from unittest.mock import patch
 
 import pytest
+
 from datadongle.collectors.census.metadata import CensusMetadata
 
 
 @pytest.fixture
 def metadata():
-    return CensusMetadata(api_key="test_key")
+    m = CensusMetadata(api_key="test_key")
+    m._dataset_catalog = SAMPLE_CATALOG
+    return m
 
 
 SAMPLE_CATALOG = [
@@ -50,37 +53,32 @@ SAMPLE_CATALOG = [
 
 class TestListDatasets:
     def test_returns_only_available_datasets(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            df = metadata.list_datasets()
+        df = metadata.list_datasets()
 
         # The unavailable acs1 entry should be excluded
         assert len(df) == 3
         assert "acs/acs1" not in df["name"].values
 
     def test_keyword_filters_by_title_and_description(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            df = metadata.list_datasets(keyword="redistricting")
+        df = metadata.list_datasets(keyword="redistricting")
 
         assert len(df) == 1
         assert df.iloc[0]["name"] == "dec/pl"
 
     def test_search_is_a_keyword_alias_for_list_datasets(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            df = metadata.search("redistricting")
+        df = metadata.search("redistricting")
 
         assert len(df) == 1
         assert df.iloc[0]["name"] == "dec/pl"
 
     def test_keyword_is_case_insensitive(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            df = metadata.list_datasets(keyword="COMMUNITY SURVEY")
+        df = metadata.list_datasets(keyword="COMMUNITY SURVEY")
 
         # Should match both acs/acs5 vintages
         assert all(name == "acs/acs5" for name in df["name"])
 
     def test_returns_expected_columns(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            df = metadata.list_datasets()
+        df = metadata.list_datasets()
 
         for col in ["title", "name", "vintage", "description"]:
             assert col in df.columns
@@ -93,8 +91,7 @@ class TestListDatasets:
 
 class TestListVintages:
     def test_returns_sorted_vintages_for_dataset(self, metadata):
-        with patch.object(metadata, "_dataset_catalog", return_value=SAMPLE_CATALOG):
-            result = metadata.list_vintages("acs/acs5")
+        result = metadata.list_vintages("acs/acs5")
 
         assert result == [2021, 2022]
 

@@ -33,7 +33,7 @@ Usage:
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from functools import cached_property
 
 import pandas as pd
 import requests
@@ -134,7 +134,7 @@ class FredMetadata:
     #  Releases
     # ------------------------------------------------------------------ #
 
-    @lru_cache(maxsize=1)
+    @cached_property
     def _all_releases(self) -> pd.DataFrame:
         rows = self._paginate("releases", result_key="releases", limit=0, fetch_all=True)
         return pd.DataFrame(rows)
@@ -145,7 +145,7 @@ class FredMetadata:
 
         Returns a DataFrame with columns: id, name, press_release, link, notes.
         """
-        df = self._all_releases().copy()
+        df = self._all_releases.copy()
         return self._filter_keyword(df, keyword, columns=["name", "notes"])
 
     def describe_release(self, release_id: int) -> dict:
@@ -158,7 +158,7 @@ class FredMetadata:
     #  Sources
     # ------------------------------------------------------------------ #
 
-    @lru_cache(maxsize=1)
+    @cached_property
     def _all_sources(self) -> pd.DataFrame:
         rows = self._paginate("sources", result_key="sources", limit=0, fetch_all=True)
         return pd.DataFrame(rows)
@@ -169,7 +169,7 @@ class FredMetadata:
 
         Returns a DataFrame with columns: id, name, link, notes.
         """
-        df = self._all_sources().copy()
+        df = self._all_sources.copy()
         return self._filter_keyword(df, keyword, columns=["name", "notes"])
 
     def describe_source(self, source_id: int) -> dict:

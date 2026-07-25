@@ -9,7 +9,6 @@ from datadongle.collectors.dkan.reader import (
     SOURCE_MODIFIED_COLUMN,
     DKANReader,
 )
-from datadongle.core.cursor import CursorSpec
 from datadongle.core.engine import TableRef
 from datadongle.core.schema import ColumnType
 from datadongle.core.write_mode import SCD2
@@ -17,7 +16,7 @@ from datadongle.core.write_mode import SCD2
 from .helpers import (
     HOSPITAL_ID,
     LONG_RAW_HEADER,
-    FakeDKANClient,
+    as_client_factory,
     dkan_normalize,
     make_hospital_spec,
     seeded_pdc_source,
@@ -27,7 +26,7 @@ LONG_COL = dkan_normalize(LONG_RAW_HEADER)[:PG_MAX_IDENTIFIER].rstrip("_")
 
 
 def _reader(source) -> DKANReader:
-    return DKANReader(client_factory=lambda base_url: FakeDKANClient(base_url, source))
+    return DKANReader(client_factory=as_client_factory(source))
 
 
 # ------------------------------------------------------------------ metadata bits
@@ -56,9 +55,12 @@ def test_write_mode_scd2_with_entity_key():
 def test_write_mode_invalidate_missing_only_on_full():
     reader = _reader(seeded_pdc_source())
     spec = make_hospital_spec("raw_data", invalidate_missing=True)
-    assert reader.write_mode(spec, mode="full").invalidate_missing is True
+    full = reader.write_mode(spec, mode="full")
     # Defensive: an incremental mode would strip it (DKAN only ever runs full).
-    assert reader.write_mode(spec, mode="incremental").invalidate_missing is False
+    incremental = reader.write_mode(spec, mode="incremental")
+
+    assert isinstance(full, SCD2) and full.invalidate_missing is True
+    assert isinstance(incremental, SCD2) and incremental.invalidate_missing is False
 
 
 # ------------------------------------------------------------------ schema discovery
@@ -77,7 +79,9 @@ def test_schema_uses_dkan_normalization_and_truncation():
     assert len(LONG_COL) <= PG_MAX_IDENTIFIER
     assert dkan_normalize(LONG_RAW_HEADER) not in names  # never emit a >63-char name
     # Every source column is text.
-    data_cols = [c for c in schema.columns if c.name not in (SOURCE_DATASET_COLUMN, SOURCE_MODIFIED_COLUMN)]
+    data_cols = [
+        c for c in schema.columns if c.name not in (SOURCE_DATASET_COLUMN, SOURCE_MODIFIED_COLUMN)
+    ]
     assert all(c.type is ColumnType.TEXT for c in data_cols)
 
 
@@ -134,10 +138,14 @@ def test_read_file_and_datastore_produce_same_columns():
     reader = _reader(source)
 
     ds_rows = [
-        r for b in reader.read(make_hospital_spec("raw_data", retrieval="datastore"), since=None) for r in b
+        r
+        for b in reader.read(make_hospital_spec("raw_data", retrieval="datastore"), since=None)
+        for r in b
     ]
     file_rows = [
-        r for b in reader.read(make_hospital_spec("raw_data", retrieval="file"), since=None) for r in b
+        r
+        for b in reader.read(make_hospital_spec("raw_data", retrieval="file"), since=None)
+        for r in b
     ]
 
     # The two retrieval modes converge on identical normalized column sets.

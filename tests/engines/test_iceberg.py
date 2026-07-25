@@ -83,7 +83,9 @@ def test_ensure_table_is_idempotent(engine):
 
 def test_scd2_first_load_inserts_all(engine):
     engine.ensure_table(TARGET, _schema(), SCD2_MODE)
-    merged = _write(engine, TARGET, _schema(), SCD2_MODE, [_rows(permit_="P1"), _rows(permit_="P2")])
+    merged = _write(
+        engine, TARGET, _schema(), SCD2_MODE, [_rows(permit_="P1"), _rows(permit_="P2")]
+    )
     assert merged == 2
     assert len(engine.read_current(TARGET)) == 2
     assert len(engine.read_history(TARGET)) == 2
@@ -135,7 +137,13 @@ def test_scd2_metadata_only_change_does_not_version(engine):
 
 def test_geometry_round_trips_to_geodataframe(engine):
     engine.ensure_table(TARGET, _schema(), SCD2_MODE)
-    _write(engine, TARGET, _schema(), SCD2_MODE, [_rows(permit_="P2", loc="SRID=4326;POINT(-87.7 41.9)")])
+    _write(
+        engine,
+        TARGET,
+        _schema(),
+        SCD2_MODE,
+        [_rows(permit_="P2", loc="SRID=4326;POINT(-87.7 41.9)")],
+    )
     df = engine.read_current(TARGET)
     geom = df[df["permit_"] == "P2"]["loc"].iloc[0]
     assert geom.geom_type == "Point"
@@ -145,7 +153,13 @@ def test_geometry_round_trips_to_geodataframe(engine):
 def test_record_hash_stable_across_equivalent_geometry(engine):
     """EWKT and WKB-hex for the same point must not create a spurious version."""
     engine.ensure_table(TARGET, _schema(), SCD2_MODE)
-    _write(engine, TARGET, _schema(), SCD2_MODE, [_rows(permit_="P1", loc="SRID=4326;POINT(-87.6 41.8)")])
+    _write(
+        engine,
+        TARGET,
+        _schema(),
+        SCD2_MODE,
+        [_rows(permit_="P1", loc="SRID=4326;POINT(-87.6 41.8)")],
+    )
     import shapely
 
     wkb_hex = shapely.to_wkb(shapely.from_wkt("POINT (-87.6 41.8)")).hex()
@@ -193,9 +207,14 @@ def test_read_high_water_mark_self_heals_after_drop(engine):
     """HWM comes from the table, so dropping + rebuilding resets it."""
     engine.ensure_table(TARGET, _schema(), SCD2_MODE)
     _write(engine, TARGET, _schema(), SCD2_MODE, [_rows(permit_="P1")])
-    assert engine.read_high_water_mark(TARGET, CursorSpec("socrata_updated_at", "socrata_id")) is not None
+    assert (
+        engine.read_high_water_mark(TARGET, CursorSpec("socrata_updated_at", "socrata_id"))
+        is not None
+    )
     engine.catalog.drop_table(engine._identifier(TARGET))
-    assert engine.read_high_water_mark(TARGET, CursorSpec("socrata_updated_at", "socrata_id")) is None
+    assert (
+        engine.read_high_water_mark(TARGET, CursorSpec("socrata_updated_at", "socrata_id")) is None
+    )
 
 
 # ------------------------------------------------------------------ upsert
@@ -215,7 +234,7 @@ def test_upsert_inserts_then_updates(engine):
     assert merged == 2  # 1 updated + 1 inserted
 
     df = engine.read_current(target)  # no entity_key ⇒ the table is the current state
-    assert dict(zip(df["id"], df["v"])) == {"a": "9", "b": "2", "c": "3"}
+    assert dict(zip(df["id"], df["v"], strict=True)) == {"a": "9", "b": "2", "c": "3"}
 
 
 def test_upsert_on_conflict_nothing_keeps_existing(engine):
@@ -229,7 +248,7 @@ def test_upsert_on_conflict_nothing_keeps_existing(engine):
     assert merged == 1
 
     df = engine.read_current(target)
-    assert dict(zip(df["id"], df["v"])) == {"a": "1", "c": "3"}
+    assert dict(zip(df["id"], df["v"], strict=True)) == {"a": "1", "c": "3"}
 
 
 # ------------------------------------------------------------- invalidate_missing
@@ -262,8 +281,13 @@ def test_invalidate_missing_reappearance_with_change_restores(engine):
     assert set(engine.read_current(TARGET)["permit_"]) == {"P1"}
 
     # P2 returns with changed content -> a new version supersedes the tombstone.
-    _write(engine, TARGET, _schema(), INVALIDATING,
-           [_rows(permit_="P1"), _rows(permit_="P2", status="reopened")])
+    _write(
+        engine,
+        TARGET,
+        _schema(),
+        INVALIDATING,
+        [_rows(permit_="P1"), _rows(permit_="P2", status="reopened")],
+    )
     current = engine.read_current(TARGET)
     assert set(current["permit_"]) == {"P1", "P2"}
     assert current[current["permit_"] == "P2"]["status"].iloc[0] == "reopened"

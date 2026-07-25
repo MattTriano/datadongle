@@ -215,6 +215,9 @@ class BikeIndexReader:
     def _enrich(self, summary: dict[str, Any]) -> dict[str, Any]:
         """Fetch full detail for a search result; fall back to summary on failure."""
         bike_id = summary.get("id")
+        if bike_id is None:
+            logger.warning("search result has no id; storing summary only")
+            return self._flatten_search(summary)
         try:
             detail = self.client.get_bike(bike_id)
         except Exception:
