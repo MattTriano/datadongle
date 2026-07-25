@@ -311,7 +311,9 @@ class SocrataReader:
         return rows
 
     @staticmethod
-    def _add_system_field_defaults(rows: list[dict[str, Any]], timestamp: str) -> list[dict[str, Any]]:
+    def _add_system_field_defaults(
+        rows: list[dict[str, Any]], timestamp: str
+    ) -> list[dict[str, Any]]:
         """File exports lack system fields; default socrata_updated_at to now."""
         for row in rows:
             row.setdefault("socrata_updated_at", timestamp)

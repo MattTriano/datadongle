@@ -62,17 +62,13 @@ class WriteSession(Protocol):
 class Engine(Protocol):
     """Storage backend: table lifecycle, staged writes, HWM reads, queries."""
 
-    def open_write(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> WriteSession:
+    def open_write(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> WriteSession:
         """Open a staged write session that realizes ``mode`` on this engine."""
 
     def query(self, sql: str, params: Any | None = None) -> Any:
         """Run a read query; returns a DataFrame/GeoDataFrame (engine-specific)."""
 
-    def ensure_table(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> None:
+    def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None:
         """Idempotently create ``target`` for ``schema`` under ``mode``.
 
         The physical shape depends on ``mode``: every table gets an
@@ -90,9 +86,7 @@ class Engine(Protocol):
     def geometry_columns(self, target: TableRef) -> dict[str, int]:
         """Map of geometry column name → SRID for ``target`` (empty if none)."""
 
-    def read_high_water_mark(
-        self, target: TableRef, cursor: CursorSpec
-    ) -> Cursor | None:
+    def read_high_water_mark(self, target: TableRef, cursor: CursorSpec) -> Cursor | None:
         """Read the max cursor value from ``target`` (``None`` if empty/absent).
 
         Derived from the table itself, so it self-heals across drop/rebuild.

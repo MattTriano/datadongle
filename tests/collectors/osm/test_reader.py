@@ -166,9 +166,7 @@ def test_element_to_row_transforms():
 
 
 def test_element_to_row_node_ids_json_encoded():
-    row = _element_to_row(
-        {"type": "way", "id": 7, "nodes": [1, 2, 3], "geometry": []}, _spec()
-    )
+    row = _element_to_row({"type": "way", "id": 7, "nodes": [1, 2, 3], "geometry": []}, _spec())
     assert row["node_ids"] == "[1, 2, 3]"
 
 
@@ -253,9 +251,14 @@ class _FakeEngine:
 
     # unused by the driver in these tests
     def query(self, sql, params=None): ...
-    def table_exists(self, target): return True
-    def table_columns(self, target): return set()
-    def geometry_columns(self, target): return {}
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
 
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)
@@ -292,7 +295,9 @@ def test_osm_reader_drives_full_through_run_collection():
 
 def test_osm_reader_drives_incremental_and_uses_table_hwm():
     reader = OSMReader(
-        client=_as_client(_FakeClient([{"type": "node", "id": 3, "lon": 0.0, "lat": 0.0, "tags": {}}]))
+        client=_as_client(
+            _FakeClient([{"type": "node", "id": 3, "lon": 0.0, "lat": 0.0, "tags": {}}])
+        )
     )
     engine = _FakeEngine(hwm=Cursor("2026-06-01T00:00:00.000000"))
     spec = _spec(target_schema="raw_data")

@@ -49,10 +49,12 @@ def engine(tmp_path):
 def test_full_then_incremental_collection(engine):
     fake = FakeArcGISHubClient(
         layer_infos={0: layer_payload(0)},
-        pages={0: [
-            [_feature(1, "E1", D1_MS)],   # consumed by the full run
-            [_feature(2, "E2", D2_MS)],   # consumed by the incremental run
-        ]},
+        pages={
+            0: [
+                [_feature(1, "E1", D1_MS)],  # consumed by the full run
+                [_feature(2, "E2", D2_MS)],  # consumed by the incremental run
+            ]
+        },
     )
     reader = ArcGISHubReader(client_factory=fake.factory())
     spec = _spec()

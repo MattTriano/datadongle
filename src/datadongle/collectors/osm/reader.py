@@ -106,9 +106,7 @@ class OSMReader:
     def cursor_spec(self, spec: OSMDatasetSpec) -> CursorSpec | None:
         return CursorSpec(column=CURSOR_COLUMN)
 
-    def read(
-        self, spec: OSMDatasetSpec, *, since: Cursor | None
-    ) -> Iterator[list[dict[str, Any]]]:
+    def read(self, spec: OSMDatasetSpec, *, since: Cursor | None) -> Iterator[list[dict[str, Any]]]:
         date_filter = _to_overpass_timestamp(since.value) if since is not None else None
 
         assert spec.query is not None  # OSMDatasetSpec requires it

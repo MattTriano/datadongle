@@ -126,7 +126,7 @@ def test_schema_renames_field_colliding_with_geometry_column():
     fake = FakeArcGISHubClient(layer_infos={0: layer_payload(0, fields=fields)})
     names = {c.name for c in _reader(fake).schema(_spec(entity_key=None)).columns}
     assert "_orig_geom" in names  # source field renamed
-    assert "geom" in names        # geometry column keeps the canonical name
+    assert "geom" in names  # geometry column keeps the canonical name
 
 
 # ------------------------------------------------------------- multi-layer schema
@@ -179,7 +179,7 @@ def test_read_flattens_attrs_dates_and_geometry():
     rows = list(_reader(fake).read(_spec(), since=None))
     assert len(rows) == 1
     (row,) = rows[0]
-    assert row["objectid"] == 1                       # attribute names lowercased
+    assert row["objectid"] == 1  # attribute names lowercased
     assert row["event_unique_id"] == "E1"
     assert row["occurred_date"] == datetime.fromtimestamp(epoch_ms / 1000, tz=UTC).isoformat()
     assert row["geom"] == "SRID=4326;POINT(-79.4 43.7)"
@@ -188,10 +188,15 @@ def test_read_flattens_attrs_dates_and_geometry():
 def test_read_paginates_until_short_page():
     fake = FakeArcGISHubClient(
         layer_infos={0: layer_payload(0, max_record_count=2)},
-        pages={0: [
-            [_feature(OBJECTID=1, Event_Unique_Id="E1"), _feature(OBJECTID=2, Event_Unique_Id="E2")],
-            [_feature(OBJECTID=3, Event_Unique_Id="E3")],  # short page -> stop
-        ]},
+        pages={
+            0: [
+                [
+                    _feature(OBJECTID=1, Event_Unique_Id="E1"),
+                    _feature(OBJECTID=2, Event_Unique_Id="E2"),
+                ],
+                [_feature(OBJECTID=3, Event_Unique_Id="E3")],  # short page -> stop
+            ]
+        },
     )
     batches = list(_reader(fake).read(_spec(), since=None))
     assert [len(b) for b in batches] == [2, 1]
@@ -206,7 +211,7 @@ def test_read_incremental_since_builds_epoch_ms_where():
     assert query_calls, "expected a /query call"
     where = query_calls[0]["where"]
     assert str(_iso_to_epoch_ms(since.value)) in where
-    assert "Type='X'" in where          # static filter preserved
+    assert "Type='X'" in where  # static filter preserved
     assert "occurred_date" not in where  # uses the source-cased column name
 
 

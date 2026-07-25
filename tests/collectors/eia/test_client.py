@@ -51,9 +51,7 @@ def test_iter_data_pages_until_total():
     client.page_size = 4
 
     pages = list(
-        client.iter_data(
-            "electricity/retail-sales", frequency="monthly", data_columns=["price"]
-        )
+        client.iter_data("electricity/retail-sales", frequency="monthly", data_columns=["price"])
     )
 
     assert [len(p) for p in pages] == [4, 4, 1]

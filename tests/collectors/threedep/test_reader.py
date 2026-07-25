@@ -142,22 +142,27 @@ def test_read_namespaces_tile_ids_and_stamps_source_tile():
 def test_read_clips_sub_tiles_to_the_bbox():
     reader = _reader(seeded_source(["n42w088"]))
     b = SINGLE_TILE_BBOX
-    rows = [r for batch in reader.read(make_elevation_spec("raw_data", bbox=b), since=None) for r in batch]
+    rows = [
+        r
+        for batch in reader.read(make_elevation_spec("raw_data", bbox=b), since=None)
+        for r in batch
+    ]
 
     # The bbox is a sub-degree slice of the tile, so clipping must drop some
     # of the 4x4 sub-tile grid — and every kept sub-tile intersects the bbox.
     assert 0 < len(rows) < 16
     for r in rows:
         assert not (
-            r["max_x"] < b.west or r["min_x"] > b.east or r["max_y"] < b.south or r["min_y"] > b.north
+            r["max_x"] < b.west
+            or r["min_x"] > b.east
+            or r["max_y"] < b.south
+            or r["min_y"] > b.north
         )
 
 
 def test_read_batches_by_batch_size():
     reader = _reader(seeded_source(["n42w088"]), batch_size=3)
-    batches = list(
-        reader.read(make_elevation_spec("raw_data", bbox=SINGLE_TILE_BBOX), since=None)
-    )
+    batches = list(reader.read(make_elevation_spec("raw_data", bbox=SINGLE_TILE_BBOX), since=None))
     assert all(len(b) <= 3 for b in batches)
     assert sum(len(b) for b in batches) > 3  # more than one batch
 

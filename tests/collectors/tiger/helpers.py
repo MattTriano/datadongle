@@ -75,7 +75,9 @@ def write_shapefile_zip(
         for feat in features:
             geom = feat.get("geometry")
             props = {k: v for k, v in feat.items() if k != "geometry"}
-            dst.write({"geometry": mapping(geom) if geom is not None else None, "properties": props})
+            dst.write(
+                {"geometry": mapping(geom) if geom is not None else None, "properties": props}
+            )
 
     zip_path = directory / f"{stem}.zip"
     with zipfile.ZipFile(zip_path, "w") as z:
@@ -89,8 +91,8 @@ class FakeTigerClient:
     """Duck-types TigerClient against an in-memory URL map. No HTTP."""
 
     def __init__(self, files: dict[str, Path], listings: dict[str, str]) -> None:
-        self._files = files          # download URL -> local zip path
-        self._listings = listings    # directory URL -> HTML
+        self._files = files  # download URL -> local zip path
+        self._listings = listings  # directory URL -> HTML
         self.fail_urls: set[str] = set()
         self.download_calls: list[str] = []
 

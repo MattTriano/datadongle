@@ -182,9 +182,7 @@ class IcebergEngine:
             fields.append(pa.field("load_id", pa.string()))
         return pa.schema(fields)
 
-    def ensure_table(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> None:
+    def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None:
         if self.table_exists(target):
             return
         self.catalog.create_namespace_if_not_exists(self._namespace(target))
@@ -306,7 +304,7 @@ class IcebergEngine:
                     f"select * exclude (rn) from ("
                     f"  select *, row_number() over (partition by {partition} "
                     f"    order by effective_from desc, ingested_at desc, load_id desc) rn "
-                    f"  from \"{target.name}\") "
+                    f'  from "{target.name}") '
                     f"where rn = 1 and record_hash <> '{_TOMBSTONE_HASH}'"
                 )
         return con.sql(sql).to_df()
@@ -333,13 +331,13 @@ class IcebergEngine:
 
         first = next(iter(geom))
         for name in geom:
-            df[name] = df[name].apply(lambda v: shapely.from_wkb(bytes(v)) if v is not None else None)
+            df[name] = df[name].apply(
+                lambda v: shapely.from_wkb(bytes(v)) if v is not None else None
+            )
         srid = geom[first]
         return gpd.GeoDataFrame(df, geometry=first, crs=f"EPSG:{srid}" if srid else None)
 
-    def read_high_water_mark(
-        self, target: TableRef, cursor: CursorSpec
-    ) -> Cursor | None:
+    def read_high_water_mark(self, target: TableRef, cursor: CursorSpec) -> Cursor | None:
         if not self.table_exists(target):
             return None
         # Scan only the cursor column(s): the HWM read must stay cheap even on
@@ -352,7 +350,7 @@ class IcebergEngine:
         con.register("hist", arrow)
         value_expr = self._hwm_value_expr(arrow.schema, cursor.column)
         row = con.sql(
-            f'select {value_expr} as hwm from hist '
+            f"select {value_expr} as hwm from hist "
             f'where "{cursor.column}" is not null '
             f'order by "{cursor.column}" desc limit 1'
         ).fetchone()
@@ -364,7 +362,7 @@ class IcebergEngine:
         if cursor.tiebreak:
             tb = con.sql(
                 f'select "{cursor.tiebreak}"::varchar as tb from hist '
-                f"where {value_expr} = ? and \"{cursor.tiebreak}\" is not null "
+                f'where {value_expr} = ? and "{cursor.tiebreak}" is not null '
                 f'order by "{cursor.tiebreak}" desc limit 1',
                 params=[hwm_value],
             ).fetchone()
@@ -590,10 +588,7 @@ class IcebergWriteSession:
                 values = [_raster_to_bytes(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.binary())
             else:
-                values = [
-                    None if r.get(col.name) is None else str(r.get(col.name))
-                    for r in rows
-                ]
+                values = [None if r.get(col.name) is None else str(r.get(col.name)) for r in rows]
                 columns[col.name] = pa.array(values, type=pa.string())
         return pa.table(columns)
 
@@ -604,8 +599,7 @@ class IcebergWriteSession:
         in memory. The path is engine-controlled (a temp name), not user input.
         """
         con.execute(
-            f"create or replace view incoming as "
-            f"select * from read_parquet('{self._stage_path}')"
+            f"create or replace view incoming as select * from read_parquet('{self._stage_path}')"
         )
 
     def _stream_append(self, table, con, sql: str) -> int:

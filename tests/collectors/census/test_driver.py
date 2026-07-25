@@ -26,10 +26,12 @@ from .helpers import DATASET, FakeCensusClient, make_spec, seeded_source
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=[
-    "iceberg",
-    pytest.param("postgres", marks=pytest.mark.postgres),
-])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def census_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":

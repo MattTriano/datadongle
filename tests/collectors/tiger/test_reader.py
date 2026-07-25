@@ -188,7 +188,9 @@ def test_no_id_column_falls_back_to_append(tmp_path):
     )
     files = {tiger_url(2024, "COASTLINE", None): zip_path}
     reader = TigerReader(client_factory=as_client_factory(FakeTigerClient(files, {})))
-    spec = _tract_spec(name="coastline", layer="COASTLINE", target_table="coastline", state_fips=None)
+    spec = _tract_spec(
+        name="coastline", layer="COASTLINE", target_table="coastline", state_fips=None
+    )
 
     assert isinstance(reader.write_mode(spec, mode="full"), Append)
 

@@ -29,8 +29,8 @@ def test_polyline_becomes_multilinestring():
 
 
 # ArcGIS convention: clockwise ring = outer, counter-clockwise = hole.
-_OUTER: list[list[float]] = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]        # clockwise
-_HOLE: list[list[float]] = [[2, 2], [4, 2], [4, 4], [2, 4], [2, 2]]            # counter-clockwise
+_OUTER: list[list[float]] = [[0, 0], [0, 10], [10, 10], [10, 0], [0, 0]]  # clockwise
+_HOLE: list[list[float]] = [[2, 2], [4, 2], [4, 4], [2, 4], [2, 2]]  # counter-clockwise
 _OUTER2: list[list[float]] = [[20, 20], [20, 30], [30, 30], [30, 20], [20, 20]]  # clockwise
 
 
@@ -47,8 +47,7 @@ def test_polygon_single_ring():
 def test_polygon_hole_groups_with_preceding_outer():
     ewkt = _geometry_to_ewkt({"rings": [_OUTER, _HOLE]}, "esriGeometryPolygon", 4326)
     assert ewkt == (
-        "SRID=4326;MULTIPOLYGON("
-        "((0 0, 0 10, 10 10, 10 0, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2)))"
+        "SRID=4326;MULTIPOLYGON(((0 0, 0 10, 10 10, 10 0, 0 0), (2 2, 4 2, 4 4, 2 4, 2 2)))"
     )
 
 

@@ -20,9 +20,7 @@ from datadongle.engines.postgres_load import StagedIngest
 
 @pytest.fixture
 def creds():
-    return DatabaseCredentials(
-        host="h", port=5432, database="d", username="u", password="p"
-    )
+    return DatabaseCredentials(host="h", port=5432, database="d", username="u", password="p")
 
 
 @pytest.fixture
@@ -52,9 +50,7 @@ def engine(mock_conn, creds):
 
 def _executed_sql(mock_cursor) -> str:
     """All SQL executed, concatenated (ensure_table emits one multi-statement string)."""
-    return "\n".join(
-        str(c[0][0]) for c in mock_cursor.execute.call_args_list if c[0]
-    )
+    return "\n".join(str(c[0][0]) for c in mock_cursor.execute.call_args_list if c[0])
 
 
 # ---------------------------------------------------------------- ensure_table
@@ -71,9 +67,7 @@ SAMPLE_COLUMNS = [
 
 def test_ensure_table_scd2_ddl(engine, mock_cursor):
     schema = TableSchema(columns=SAMPLE_COLUMNS)
-    engine.ensure_table(
-        TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"])
-    )
+    engine.ensure_table(TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"]))
     sql = _executed_sql(mock_cursor)
 
     assert "create table if not exists raw_data.crimes" in sql
@@ -90,9 +84,9 @@ def test_ensure_table_scd2_ddl(engine, mock_cursor):
     assert '"payload" jsonb' in sql
     assert '"geom" geometry(Point,4326)' in sql
     # constraint + current-version index, both idempotent
-    assert 'create unique index if not exists uq_crimes_entity_hash' in sql
+    assert "create unique index if not exists uq_crimes_entity_hash" in sql
     assert '"id", "record_hash"' in sql
-    assert 'create index if not exists ix_crimes_current' in sql
+    assert "create index if not exists ix_crimes_current" in sql
     assert 'where "valid_to" is null' in sql
 
 
@@ -117,24 +111,19 @@ def test_ensure_table_raster_column_gets_convex_hull_index(engine, mock_cursor):
             Column("checksum", ColumnType.TEXT),
         ]
     )
-    engine.ensure_table(
-        TableRef("elevation", "raw_data"), schema, SCD2(entity_key=["tile_id"])
-    )
+    engine.ensure_table(TableRef("elevation", "raw_data"), schema, SCD2(entity_key=["tile_id"]))
     sql = _executed_sql(mock_cursor)
 
     assert '"rast" raster not null' in sql
     # The GiST convex-hull index that serves ST_Intersects sampling, partial
     # over current rows under SCD2.
     assert (
-        'on raw_data.elevation using gist (ST_ConvexHull("rast")) where "valid_to" is null'
-        in sql
+        'on raw_data.elevation using gist (ST_ConvexHull("rast")) where "valid_to" is null' in sql
     )
 
 
 def test_ensure_table_raster_index_is_full_without_scd2(engine, mock_cursor):
-    schema = TableSchema(
-        columns=[Column("rast", ColumnType.RASTER)]
-    )
+    schema = TableSchema(columns=[Column("rast", ColumnType.RASTER)])
     engine.ensure_table(TableRef("tiles", "raw_data"), schema, Append())
     sql = _executed_sql(mock_cursor)
 
@@ -154,9 +143,7 @@ def test_ensure_table_defaults_namespace_to_public(engine, mock_cursor):
 
 def test_open_write_scd2_configures_stager(engine):
     schema = TableSchema(columns=SAMPLE_COLUMNS)
-    ws = engine.open_write(
-        TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"])
-    )
+    ws = engine.open_write(TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"]))
     assert isinstance(ws, StagedIngest)
     assert ws._entity_key == ["id"]
     assert ws._invalidate_missing is False
@@ -178,9 +165,7 @@ def test_open_write_scd2_passes_invalidate_missing(engine):
 
 def test_open_write_upsert_configures_conflict(engine):
     schema = TableSchema(columns=[Column("id", ColumnType.TEXT)])
-    ws = engine.open_write(
-        TableRef("t", "s"), schema, Upsert(keys=["id"], on_conflict="nothing")
-    )
+    ws = engine.open_write(TableRef("t", "s"), schema, Upsert(keys=["id"], on_conflict="nothing"))
     assert ws._conflict_columns == ["id"]
     assert ws._conflict_action == "NOTHING"
     assert ws._entity_key is None

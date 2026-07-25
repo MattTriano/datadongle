@@ -46,11 +46,7 @@ def run_collection(
     schema = reader.schema(spec)
     write_mode = reader.write_mode(spec, mode=mode)
 
-    if (
-        mode == "incremental"
-        and isinstance(write_mode, SCD2)
-        and write_mode.invalidate_missing
-    ):
+    if mode == "incremental" and isinstance(write_mode, SCD2) and write_mode.invalidate_missing:
         raise ValueError(
             "SCD2(invalidate_missing=True) requires a full read: an incremental "
             "pull cannot observe which entities are absent. Use mode='full'."
@@ -81,9 +77,7 @@ def run_collection(
         for batch in reader.read(spec, since=since):
             ws.write_batch(batch)
             batch_cursor = reader.extract_cursor(batch)
-            if batch_cursor is not None and (
-                high is None or batch_cursor.sort_key > high.sort_key
-            ):
+            if batch_cursor is not None and (high is None or batch_cursor.sort_key > high.sort_key):
                 high = batch_cursor
         if run is not None:
             run.rows_staged = ws.rows_staged

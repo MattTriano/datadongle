@@ -33,10 +33,12 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=[
-    "iceberg",
-    pytest.param("postgres", marks=pytest.mark.postgres),
-])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def cms_engine(request, tmp_path):
     """An engine per param: hermetic Iceberg always, Postgres when configured."""
     if request.param == "iceberg":

@@ -79,7 +79,9 @@ def test_schema_uses_dkan_normalization_and_truncation():
     assert len(LONG_COL) <= PG_MAX_IDENTIFIER
     assert dkan_normalize(LONG_RAW_HEADER) not in names  # never emit a >63-char name
     # Every source column is text.
-    data_cols = [c for c in schema.columns if c.name not in (SOURCE_DATASET_COLUMN, SOURCE_MODIFIED_COLUMN)]
+    data_cols = [
+        c for c in schema.columns if c.name not in (SOURCE_DATASET_COLUMN, SOURCE_MODIFIED_COLUMN)
+    ]
     assert all(c.type is ColumnType.TEXT for c in data_cols)
 
 
@@ -136,10 +138,14 @@ def test_read_file_and_datastore_produce_same_columns():
     reader = _reader(source)
 
     ds_rows = [
-        r for b in reader.read(make_hospital_spec("raw_data", retrieval="datastore"), since=None) for r in b
+        r
+        for b in reader.read(make_hospital_spec("raw_data", retrieval="datastore"), since=None)
+        for r in b
     ]
     file_rows = [
-        r for b in reader.read(make_hospital_spec("raw_data", retrieval="file"), since=None) for r in b
+        r
+        for b in reader.read(make_hospital_spec("raw_data", retrieval="file"), since=None)
+        for r in b
     ]
 
     # The two retrieval modes converge on identical normalized column sets.

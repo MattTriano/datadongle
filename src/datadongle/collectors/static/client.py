@@ -202,8 +202,7 @@ class StaticFileClient:
 
                 for cells in rows:
                     yield {
-                        col: _cell_to_str(value)
-                        for col, value in zip(columns, cells, strict=True)
+                        col: _cell_to_str(value) for col, value in zip(columns, cells, strict=True)
                     }
             finally:
                 workbook.close()

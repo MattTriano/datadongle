@@ -204,9 +204,7 @@ class CKANReader:
         name_map = normalize_column_names([name for name, _ in raw])
         # Preserve order and types; drop names that normalized to empty.
         columns = [
-            self._column_for(name_map[name], col_type)
-            for name, col_type in raw
-            if name in name_map
+            self._column_for(name_map[name], col_type) for name, col_type in raw if name in name_map
         ]
         return TableSchema(columns=columns)
 
@@ -257,9 +255,7 @@ class CKANReader:
         with open(filepath, "rb") as f:
             for feature in ijson.items(f, "features.item"):
                 props = feature.get("properties") or {}
-                columns = [
-                    (k, ColumnType.TEXT) for k in props if k not in CKAN_INTERNAL_COLUMNS
-                ]
+                columns = [(k, ColumnType.TEXT) for k in props if k not in CKAN_INTERNAL_COLUMNS]
                 columns.append((GEOMETRY_COLUMN, ColumnType.GEOMETRY))
                 return columns
         raise ValueError(f"Resource {resource.id} GeoJSON has no features")

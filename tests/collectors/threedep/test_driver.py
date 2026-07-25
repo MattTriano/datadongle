@@ -35,10 +35,12 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=[
-    "iceberg",
-    pytest.param("postgres", marks=pytest.mark.postgres),
-])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def threedep_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))
@@ -257,9 +259,7 @@ def test_postgres_st_value_samples_the_landed_raster(threedep_engine):
     if isinstance(threedep_engine, IcebergEngine):
         pytest.skip("PostGIS-only behavior (raster COPY + ST_Value)")
     spec, target = _spec_and_target(threedep_engine)
-    run_threedep_collection(
-        _reader(seeded_source(["n42w088"])), spec, threedep_engine, mode="full"
-    )
+    run_threedep_collection(_reader(seeded_source(["n42w088"])), spec, threedep_engine, mode="full")
 
     b = SINGLE_TILE_BBOX
     cx, cy = (b.west + b.east) / 2, (b.south + b.north) / 2

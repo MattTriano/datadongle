@@ -413,9 +413,7 @@ class PostgresEngine:
     def _fqn(self, target: TableRef) -> str:
         return f"{self._schema_of(target)}.{target.name}"
 
-    def open_write(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> StagedIngest:
+    def open_write(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> StagedIngest:
         """Open a staged write realizing ``mode`` on this table."""
         kwargs: dict[str, Any] = {
             "target_table": target.name,
@@ -440,19 +438,15 @@ class PostgresEngine:
             raise TypeError(f"Unsupported write mode for PostgresEngine: {mode!r}")
         return self.staged_ingest(**kwargs)
 
-    def ensure_table(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> None:
+    def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None:
         """Idempotently create ``target`` for ``schema`` under ``mode``."""
         self.execute(self._render_create_table(target, schema, mode))
 
-    def _render_create_table(
-        self, target: TableRef, schema: TableSchema, mode: WriteMode
-    ) -> str:
+    def _render_create_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> str:
         fqn = self._fqn(target)
         col_defs = [self._render_column(c) for c in schema.columns]
         col_defs.append(
-            f'"{_INGESTED_AT}" timestamptz not null default (now() at time zone \'UTC\')'
+            f"\"{_INGESTED_AT}\" timestamptz not null default (now() at time zone 'UTC')"
         )
         if isinstance(mode, SCD2):
             col_defs.append('"record_hash" text not null')
@@ -517,9 +511,7 @@ class PostgresEngine:
     def geometry_columns(self, target: TableRef) -> dict[str, int]:
         return dict(self._get_geometry_info(target.name, self._schema_of(target)))
 
-    def read_high_water_mark(
-        self, target: TableRef, cursor: CursorSpec
-    ) -> Cursor | None:
+    def read_high_water_mark(self, target: TableRef, cursor: CursorSpec) -> Cursor | None:
         """Read the max cursor value (and tiebreak at that max) from the table.
 
         Timestamp cursor columns are formatted to a canonical ISO-8601
@@ -533,7 +525,7 @@ class PostgresEngine:
         value_expr = self._hwm_value_expr(target, cursor.column)
 
         df = self.query(
-            f'select {value_expr} as hwm_value from {fqn} '
+            f"select {value_expr} as hwm_value from {fqn} "
             f'where "{cursor.column}" is not null '
             f'order by "{cursor.column}" desc limit 1'
         )
@@ -545,7 +537,7 @@ class PostgresEngine:
         if cursor.tiebreak:
             df_tb = self.query(
                 f'select "{cursor.tiebreak}"::text as tb from {fqn} '
-                f"where {value_expr} = %(v)s and \"{cursor.tiebreak}\" is not null "
+                f'where {value_expr} = %(v)s and "{cursor.tiebreak}" is not null '
                 f'order by "{cursor.tiebreak}" desc limit 1',
                 {"v": hwm_value},
             )

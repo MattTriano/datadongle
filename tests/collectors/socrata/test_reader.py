@@ -122,9 +122,7 @@ def test_build_where_none_for_full_read():
 
 def test_build_where_with_tiebreak():
     where = SocrataReader._build_where(":updated_at", Cursor("2024-01-01", "5"))
-    assert where == (
-        "(:updated_at = '2024-01-01' AND :id > '5') OR (:updated_at > '2024-01-01')"
-    )
+    assert where == ("(:updated_at = '2024-01-01' AND :id > '5') OR (:updated_at > '2024-01-01')")
 
 
 def test_build_where_without_tiebreak():
@@ -221,9 +219,14 @@ class _FakeEngine:
 
     # unused by the driver in these tests
     def query(self, sql, params=None): ...
-    def table_exists(self, target): return True
-    def table_columns(self, target): return set()
-    def geometry_columns(self, target): return {}
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
 
     def read_high_water_mark(self, target, cursor):
         self.calls["hwm"] = (target, cursor)

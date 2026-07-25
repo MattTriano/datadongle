@@ -69,6 +69,7 @@ def test_list_tiger_layers_keyword(tm):
     layer_names = df["layer"].values
     assert "PRIMARYROADS" in layer_names or "ROADS" in layer_names
 
+
 @pytest.mark.network
 def test_list_cartographic_layers(tm):
     df = tm.list_layers(2024, source="cartographic")
@@ -79,6 +80,7 @@ def test_list_cartographic_layers(tm):
 # ------------------------------------------------------------------ #
 #  list_files — TIGER/Line
 # ------------------------------------------------------------------ #
+
 
 @pytest.mark.network
 class TestListTigerFiles:
@@ -136,6 +138,7 @@ class TestListTigerFiles:
 # ------------------------------------------------------------------ #
 #  list_files — Cartographic Boundaries
 # ------------------------------------------------------------------ #
+
 
 @pytest.mark.network
 class TestListCartographicFiles:
@@ -207,6 +210,7 @@ class TestGetDownloadUrl:
 # ------------------------------------------------------------------ #
 #  _parse_directory_links — the most likely failure point
 # ------------------------------------------------------------------ #
+
 
 @pytest.mark.network
 class TestParseDirectoryLinks:

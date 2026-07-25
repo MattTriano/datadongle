@@ -59,14 +59,10 @@ def test_spec_rejects_non_nad83_bbox():
 
 
 def test_spec_accepts_tiles_the_bbox_needs():
-    spec = ThreeDEPDatasetSpec(
-        name="x", target_table="x", bbox=_bbox(), tiles=["n42w088"]
-    )
+    spec = ThreeDEPDatasetSpec(name="x", target_table="x", bbox=_bbox(), tiles=["n42w088"])
     assert spec.tiles == ["n42w088"]
 
 
 def test_spec_rejects_tiles_outside_the_bbox():
     with pytest.raises(ValueError, match="not among the tiles"):
-        ThreeDEPDatasetSpec(
-            name="x", target_table="x", bbox=_bbox(), tiles=["n38w123"]
-        )
+        ThreeDEPDatasetSpec(name="x", target_table="x", bbox=_bbox(), tiles=["n38w123"])

@@ -35,10 +35,12 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=[
-    "iceberg",
-    pytest.param("postgres", marks=pytest.mark.postgres),
-])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def static_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))

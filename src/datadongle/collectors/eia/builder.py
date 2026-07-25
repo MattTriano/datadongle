@@ -201,9 +201,7 @@ class EIASpecBuilder:
             return available
         chosen = list(data_columns)
         if not chosen:
-            raise ValueError(
-                "data_columns cannot be empty; omit it to pull every measure."
-            )
+            raise ValueError("data_columns cannot be empty; omit it to pull every measure.")
         unknown = [c for c in chosen if c not in available]
         if unknown:
             raise ValueError(
@@ -230,8 +228,7 @@ class EIASpecBuilder:
         if check_values:
             for facet_id, chosen in result.items():
                 allowed = {
-                    v.get("id")
-                    for v in self.metadata.client.get_facet_values(route, facet_id)
+                    v.get("id") for v in self.metadata.client.get_facet_values(route, facet_id)
                 }
                 bad = [c for c in chosen if c not in allowed]
                 if bad:
@@ -247,9 +244,7 @@ class EIASpecBuilder:
             return entity_key  # explicit: a caller-chosen list, or None for Append
         # The SCD2 grain of a time-series observation: the route's facet-id
         # columns (normalized to match the reader's output) plus ``period``.
-        return [normalize_column_name(fid) for fid in _ids(meta.get("facets"))] + [
-            "period"
-        ]
+        return [normalize_column_name(fid) for fid in _ids(meta.get("facets"))] + ["period"]
 
 
 # ----------------------------------------------------------------------

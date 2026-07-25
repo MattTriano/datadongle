@@ -123,9 +123,7 @@ class EIAReader:
             columns.append(Column(name, col_type, nullable=name != CURSOR_COLUMN))
         return TableSchema(columns=columns)
 
-    def write_mode(
-        self, spec: EIADatasetSpec, *, mode: str = "incremental"
-    ) -> WriteMode:
+    def write_mode(self, spec: EIADatasetSpec, *, mode: str = "incremental") -> WriteMode:
         # entity_key (facet ids + period) ⇒ versioned history; else append.
         if spec.entity_key:
             return SCD2(entity_key=spec.entity_key)

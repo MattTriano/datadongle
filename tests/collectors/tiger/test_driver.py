@@ -35,10 +35,12 @@ from .helpers import (
 # --------------------------------------------------------------- engine fixture
 
 
-@pytest.fixture(params=[
-    "iceberg",
-    pytest.param("postgres", marks=pytest.mark.postgres),
-])
+@pytest.fixture(
+    params=[
+        "iceberg",
+        pytest.param("postgres", marks=pytest.mark.postgres),
+    ]
+)
 def tiger_engine(request, tmp_path):
     if request.param == "iceberg":
         yield IcebergEngine(str(tmp_path / "warehouse"))
@@ -98,7 +100,9 @@ def _tract_files(tmp_path, data: dict) -> dict:
     """data: {(vintage, state): [feature dicts]} -> {download_url: zip_path}."""
     files = {}
     for (vintage, state), feats in data.items():
-        zp = write_shapefile_zip(tmp_path, f"tl_{vintage}_{state}_tract", feats, geom_type="Polygon")
+        zp = write_shapefile_zip(
+            tmp_path, f"tl_{vintage}_{state}_tract", feats, geom_type="Polygon"
+        )
         files[tiger_url(vintage, "TRACT", state)] = zp
     return files
 
@@ -220,7 +224,9 @@ def test_national_scope_collects_one_file_per_vintage(tiger_engine, tmp_path):
         )
         files[tiger_url(v, "PRIMARYROADS", None)] = zp
     reader = _reader(files)
-    spec = _tract_spec(schema, name="primary_roads", layer="PRIMARYROADS", target_table="primary_roads")
+    spec = _tract_spec(
+        schema, name="primary_roads", layer="PRIMARYROADS", target_table="primary_roads"
+    )
     target = TableRef(spec.target_table, schema)
 
     summary = run_tiger_collection(reader, spec, tiger_engine)
@@ -236,7 +242,13 @@ def test_county_scope_enumerates_and_injects_fips(tiger_engine, tmp_path):
         zp = write_shapefile_zip(
             tmp_path,
             f"tl_2024_{county}_roads",
-            [{"geometry": LineString([(0, 0), (1, 1)]), "LINEARID": f"L{county}", "FULLNAME": "Main"}],
+            [
+                {
+                    "geometry": LineString([(0, 0), (1, 1)]),
+                    "LINEARID": f"L{county}",
+                    "FULLNAME": "Main",
+                }
+            ],
             geom_type="LineString",
         )
         files[tiger_url(2024, "ROADS", county)] = zp
@@ -247,7 +259,12 @@ def test_county_scope_enumerates_and_injects_fips(tiger_engine, tmp_path):
     }
     reader = _reader(files, listings)
     spec = _tract_spec(
-        schema, name="roads", layer="ROADS", target_table="roads", vintages=[2024], state_fips=["17"]
+        schema,
+        name="roads",
+        layer="ROADS",
+        target_table="roads",
+        vintages=[2024],
+        state_fips=["17"],
     )
     target = TableRef(spec.target_table, schema)
 

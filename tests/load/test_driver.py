@@ -63,9 +63,14 @@ class FakeEngine:
 
     # unused by the driver in these tests
     def query(self, sql, params=None): ...
-    def table_exists(self, target): return True
-    def table_columns(self, target): return set()
-    def geometry_columns(self, target): return {}
+    def table_exists(self, target):
+        return True
+
+    def table_columns(self, target):
+        return set()
+
+    def geometry_columns(self, target):
+        return {}
 
 
 class FakeReader:
@@ -110,9 +115,7 @@ class FakeTracker:
 
     @contextlib.contextmanager
     def track(self, source, dataset_id, target_table, metadata=None):
-        run = SimpleNamespace(
-            rows_staged=0, rows_merged=0, rows_ingested=0, high_water_mark=None
-        )
+        run = SimpleNamespace(rows_staged=0, rows_merged=0, rows_ingested=0, high_water_mark=None)
         self.runs.append((source, dataset_id, target_table, run))
         yield run
 

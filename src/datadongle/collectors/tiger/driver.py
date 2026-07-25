@@ -88,27 +88,27 @@ def run_tiger_collection(
         for fips in reader.units(spec, vintage):
             try:
                 staged, merged, invalidated = _collect_one(
-                    reader, _narrow(spec, vintage, fips), engine, target, union_schema, write_mode, tracker
+                    reader,
+                    _narrow(spec, vintage, fips),
+                    engine,
+                    target,
+                    union_schema,
+                    write_mode,
+                    tracker,
                 )
                 summary["files_processed"] += 1
                 summary["total_rows_staged"] += staged
                 summary["total_rows_merged"] += merged
                 summary["total_rows_invalidated"] += invalidated
             except Exception as e:
-                logger.error(
-                    "TIGER %s vintage=%d unit=%s failed: %s", spec.name, vintage, fips, e
-                )
-                summary["errors"].append(
-                    {"vintage": vintage, "state_fips": fips, "error": str(e)}
-                )
+                logger.error("TIGER %s vintage=%d unit=%s failed: %s", spec.name, vintage, fips, e)
+                summary["errors"].append({"vintage": vintage, "state_fips": fips, "error": str(e)})
 
     logger.info("TIGER collection complete for %r: %s", spec.name, summary)
     return summary
 
 
-def _narrow(
-    spec: TigerDatasetSpec, vintage: int, fips: str | None = "__all__"
-) -> TigerDatasetSpec:
+def _narrow(spec: TigerDatasetSpec, vintage: int, fips: str | None = "__all__") -> TigerDatasetSpec:
     """A copy of ``spec`` scoped to one vintage (and optionally one unit).
 
     Schema discovery narrows to a vintage only (``fips="__all__"`` keeps the

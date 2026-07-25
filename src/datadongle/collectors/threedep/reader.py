@@ -154,9 +154,7 @@ class ThreeDEPReader:
     # Per-tile read
     # ------------------------------------------------------------------
 
-    def _read_tile(
-        self, spec: ThreeDEPDatasetSpec, name: str
-    ) -> Iterator[list[dict[str, Any]]]:
+    def _read_tile(self, spec: ThreeDEPDatasetSpec, name: str) -> Iterator[list[dict[str, Any]]]:
         """Download one 1-degree tile to a temp file and yield its sub-tile rows,
         clipped to the spec's bbox; the file is deleted when the tile is done."""
         tmp = tempfile.NamedTemporaryFile(suffix=".tif", prefix=f"3dep_{name}_", delete=False)
