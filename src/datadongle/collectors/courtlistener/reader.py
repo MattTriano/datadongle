@@ -244,8 +244,9 @@ class CourtListenerReader:
             for row in reader:
                 clean = {k: (v if v != "" else None) for k, v in row.items()}
                 for column in TS_COLUMNS:
-                    if clean.get(column):
-                        clean[column] = normalize_timestamp(clean[column], column)
+                    value = clean.get(column)
+                    if value:
+                        clean[column] = normalize_timestamp(value, column)
                 batch.append(clean)
                 if len(batch) >= BULK_BATCH_SIZE:
                     yield batch

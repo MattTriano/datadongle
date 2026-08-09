@@ -68,7 +68,8 @@ BULK_ROWS = [
 ]
 
 BULK_URL = (
-    "https://com-courtlistener.s3-us-west-2.amazonaws.com/bulk-data/dockets-2024-01-31.csv.bz2"
+    "https://com-courtlistener-storage.s3-us-west-2.amazonaws.com"
+    "/bulk-data/dockets-2024-01-31.csv.bz2"
 )
 BULK_EXPORTS = [
     {

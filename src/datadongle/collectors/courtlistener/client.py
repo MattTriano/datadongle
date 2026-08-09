@@ -50,7 +50,7 @@ API_BASE = "https://www.courtlistener.com/api/rest/v4"
 
 # Public S3 bucket holding the monthly bulk exports, under the bulk-data/ key
 # prefix. Files are named "<prefix>-<YYYY-MM-DD>.csv.bz2".
-BULK_STORAGE_URL = "https://com-courtlistener.s3-us-west-2.amazonaws.com/"
+BULK_STORAGE_URL = "https://com-courtlistener-storage.s3-us-west-2.amazonaws.com/"
 BULK_KEY_PREFIX = "bulk-data/"
 
 # Bulk CSVs quote with a backtick instead of a double-quote (court text is
@@ -117,16 +117,25 @@ class CourtListenerClient:
         self.timeout = timeout
         self.page_size = page_size
 
-        self.session = requests.Session()
-        if self.api_token:
-            self.session.headers["Authorization"] = f"Token {self.api_token}"
         retry = Retry(
             total=5,
             backoff_factor=1.0,
             status_forcelist=(429, 500, 502, 503, 504),
             allowed_methods=("GET", "OPTIONS"),
         )
-        self.session.mount("https://", HTTPAdapter(max_retries=retry))
+
+        # API session: carries the token.
+        self.session = requests.Session()
+        if self.api_token:
+            self.session.headers["Authorization"] = f"Token {self.api_token}"
+
+        # Bulk session: public S3 bucket, anonymous by construction. Never give
+        # this session credentials — S3 rejects a "Token ..." Authorization header
+        # with 400 InvalidArgument and echoes the token back in the error body.
+        self.bulk_session = requests.Session()
+
+        for session in (self.session, self.bulk_session):
+            session.mount("https://", HTTPAdapter(max_retries=retry))
 
     def get_json(self, url: str, params: dict[str, Any] | None = None) -> dict:
         """GET ``url`` and return the JSON payload."""
@@ -193,7 +202,7 @@ class CourtListenerClient:
             page_params = dict(params)
             if token:
                 page_params["continuation-token"] = token
-            resp = self.session.get(BULK_STORAGE_URL, params=page_params, timeout=self.timeout)
+            resp = self.bulk_session.get(BULK_STORAGE_URL, params=page_params, timeout=self.timeout)
             resp.raise_for_status()
             entries, token = _parse_bucket_listing(resp.content)
             keys.extend(entries)
@@ -224,7 +233,7 @@ class CourtListenerClient:
         """Stream a bulk export to ``dest_path`` and return the path."""
         dest_path = Path(dest_path)
         dest_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.session.get(url, stream=True, timeout=self.timeout) as resp:
+        with self.bulk_session.get(url, stream=True, timeout=self.timeout) as resp:
             resp.raise_for_status()
             with open(dest_path, "wb") as f:
                 for chunk in resp.iter_content(chunk_size=1 << 20):
@@ -241,7 +250,7 @@ class CourtListenerClient:
         """
         decompressor = bz2.BZ2Decompressor()
         buffer = b""
-        with self.session.get(url, stream=True, timeout=self.timeout) as resp:
+        with self.bulk_session.get(url, stream=True, timeout=self.timeout) as resp:
             resp.raise_for_status()
             for chunk in resp.iter_content(chunk_size=1 << 16):
                 buffer += decompressor.decompress(chunk)

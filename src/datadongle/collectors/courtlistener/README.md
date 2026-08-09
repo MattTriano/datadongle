@@ -88,6 +88,6 @@ uv run --no-sync pytest tests/collectors/courtlistener/test_live.py -m network
 ```
 
 1. **Bulk CSV quoting**: bulk files are parsed with a backtick quotechar (`BULK_CSV_QUOTECHAR` in `client.py`), per CourtListener's bulk-data docs.
-2. **Bulk bucket listing**: exports are listed from `https://com-courtlistener.s3-us-west-2.amazonaws.com/?list-type=2&prefix=bulk-data/…`.
+2. **Bulk bucket listing**: exports are listed from `https://com-courtlistener-storage.s3-us-west-2.amazonaws.com/?list-type=2&prefix=bulk-data/…`. The bucket is public, and the client uses a separate credential-free `bulk_session` for it — S3 rejects a `Token …` Authorization header with a 400 that echoes the token back in the error body, so the API session must never be used for bulk requests.
 3. **Ordering**: incremental reads request `order_by=date_modified,id`; confirm v4 cursor pagination accepts this compound ordering (if not, drop to `order_by=date_modified` — client-side strictly-after filtering still guards correctness, at the cost of tie-stability across pages).
 4. **`page_size`**: the client sends it only when set; confirm the server's cap before tuning it.
