@@ -105,3 +105,61 @@ class TableSchema:
         COPY); ``IcebergEngine`` stores the decoded WKB bytes, like geometry.
         """
         return {c.name for c in self.columns if c.type is ColumnType.RASTER}
+
+
+@dataclass(frozen=True)
+class TypeMismatch:
+    """A column present in both schema and table, but with differing types.
+
+    ``expected`` and ``actual`` are engine-native type names, already
+    canonicalized by the engine so that spelling variants (PostgreSQL's
+    ``timestamptz`` vs ``timestamp with time zone``) don't read as drift.
+    """
+
+    column: str
+    expected: str
+    actual: str
+
+
+@dataclass(frozen=True)
+class SchemaDiff:
+    """How a live table differs from the ``TableSchema`` a collector wants.
+
+    Engine-neutral, so an engine that can introspect a table can report drift
+    in one shape. Pipeline columns the engine adds itself (``ingested_at``, the
+    SCD2 trio) are the engine's business and never appear here.
+
+    The additive/non-additive split is what drives policy: missing columns can
+    be resolved by an ``ADD COLUMN``, while dropped or retyped columns need a
+    human decision (backfill, rewrite, or a new table version).
+    """
+
+    missing_columns: list[Column]
+    unexpected_columns: list[str]
+    type_mismatches: list[TypeMismatch]
+
+    @property
+    def is_empty(self) -> bool:
+        """True when the table already matches the schema."""
+        return not (self.missing_columns or self.unexpected_columns or self.type_mismatches)
+
+    @property
+    def is_additive_only(self) -> bool:
+        """True when the only drift is columns the schema has and the table lacks."""
+        return bool(self.missing_columns) and not (self.unexpected_columns or self.type_mismatches)
+
+    def describe(self) -> str:
+        """A short human-readable summary, for error messages and logs."""
+        if self.is_empty:
+            return "no drift"
+        parts = []
+        if self.missing_columns:
+            names = ", ".join(c.name for c in self.missing_columns)
+            parts.append(f"missing from table: {names}")
+        if self.unexpected_columns:
+            parts.append(
+                f"present in table but not in schema: {', '.join(self.unexpected_columns)}"
+            )
+        for m in self.type_mismatches:
+            parts.append(f"{m.column} is {m.actual}, schema wants {m.expected}")
+        return "; ".join(parts)

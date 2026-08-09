@@ -6,8 +6,10 @@ PostGIS. It implements the ``datadongle.core`` Engine protocol
 small set of DB primitives, and retains the lower-level ``staged_ingest`` and
 ``query`` helpers used directly by the not-yet-migrated collectors.
 
-The per-mode staged-merge SQL lives in ``engines.postgres_load``; credentials,
-logging, and retry helpers stay in ``db.core`` (shared with MySQL).
+The per-mode staged-merge SQL lives in ``engines.postgres_load``; the DDL
+rendering lives in ``engines.postgres_ddl`` (connection-free, so it doubles as
+the public "give me the DDL for my migration tool" API); credentials, logging,
+and retry helpers stay in ``db.core`` (shared with MySQL).
 """
 
 from __future__ import annotations
@@ -23,31 +25,22 @@ from psycopg2.extensions import connection as Psycopg2Connection
 
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
-from datadongle.core.schema import ColumnType, TableSchema
+from datadongle.core.exceptions import SchemaDriftError, TableNotFoundError
+from datadongle.core.schema import SchemaDiff, TableSchema, TypeMismatch
 from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 from datadongle.db.core import DatabaseCredentials, get_logger, pg_retry
+from datadongle.engines.postgres_ddl import (
+    INGESTED_AT,
+    SCD2_COLUMNS,
+    canonical_type,
+    expected_information_schema_type,
+    fqn,
+    pipeline_columns,
+    render_create_table,
+    render_migration,
+    schema_of,
+)
 from datadongle.engines.postgres_load import StagedIngest
-
-# Neutral column type -> PostgreSQL type.
-_PG_TYPES: dict[ColumnType, str] = {
-    ColumnType.TEXT: "text",
-    ColumnType.INTEGER: "integer",
-    ColumnType.BIGINT: "bigint",
-    ColumnType.NUMERIC: "numeric",
-    ColumnType.DOUBLE: "double precision",
-    ColumnType.BOOLEAN: "boolean",
-    ColumnType.TIMESTAMP: "timestamp",
-    ColumnType.TIMESTAMPTZ: "timestamptz",
-    ColumnType.DATE: "date",
-    ColumnType.JSON: "jsonb",
-    ColumnType.RASTER: "raster",
-}
-
-# Pipeline columns the engine fills itself (excluded from the staged COPY
-# column list). Every table gets ``ingested_at``; SCD2 tables also get the
-# versioning trio.
-_INGESTED_AT = "ingested_at"
-_SCD2_COLUMNS = ("record_hash", "valid_from", "valid_to")
 
 _TIMESTAMP_TYPES = {"timestamp with time zone", "timestamp without time zone"}
 # Canonical ISO-8601 microsecond form for a timestamp high-water mark.
@@ -55,9 +48,28 @@ _HWM_TS_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US'
 
 
 class PostgresEngine:
-    def __init__(self, creds: DatabaseCredentials, db_name: str | None = None) -> None:
+    """PostgreSQL + PostGIS storage engine.
+
+    ``manage_ddl`` decides who owns the schema. The default (``True``) is the
+    historical behavior: ``ensure_table`` issues idempotent ``create table if
+    not exists`` DDL. Set it to ``False`` when an external migration tool
+    (Flyway, sqitch) owns the database — ``ensure_table`` then creates nothing
+    and instead verifies the table exists and matches, raising
+    :class:`TableNotFoundError` or :class:`SchemaDriftError` with the SQL you
+    need to add to a migration. That keeps an ingestion run from creating
+    tables the migration history has no record of.
+    """
+
+    def __init__(
+        self,
+        creds: DatabaseCredentials,
+        db_name: str | None = None,
+        *,
+        manage_ddl: bool = True,
+    ) -> None:
         self.creds = creds
         self.db_name = db_name or creds.database
+        self.manage_ddl = manage_ddl
         self._conn: Psycopg2Connection | None = None
         self.logger = get_logger("postgres_engine")
         self._geometry_info_cache: dict[tuple[str, str], dict[str, int]] = {}
@@ -408,10 +420,10 @@ class PostgresEngine:
     @staticmethod
     def _schema_of(target: TableRef) -> str:
         """The PostgreSQL schema for ``target`` (namespace, default ``public``)."""
-        return target.namespace or "public"
+        return schema_of(target)
 
     def _fqn(self, target: TableRef) -> str:
-        return f"{self._schema_of(target)}.{target.name}"
+        return fqn(target)
 
     def open_write(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> StagedIngest:
         """Open a staged write realizing ``mode`` on this table."""
@@ -423,90 +435,133 @@ class PostgresEngine:
             kwargs.update(
                 entity_key=mode.entity_key,
                 invalidate_missing=mode.invalidate_missing,
-                metadata_columns={_INGESTED_AT, *_SCD2_COLUMNS},
+                metadata_columns={INGESTED_AT, *SCD2_COLUMNS},
                 hash_exclude_columns=schema.metadata_column_names(),
             )
         elif isinstance(mode, Upsert):
             kwargs.update(
                 conflict_column=list(mode.keys),
                 conflict_action=mode.on_conflict.upper(),
-                metadata_columns={_INGESTED_AT},
+                metadata_columns={INGESTED_AT},
             )
         elif isinstance(mode, Append):
-            kwargs.update(metadata_columns={_INGESTED_AT})
+            kwargs.update(metadata_columns={INGESTED_AT})
         else:
             raise TypeError(f"Unsupported write mode for PostgresEngine: {mode!r}")
         return self.staged_ingest(**kwargs)
 
     def ensure_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> None:
-        """Idempotently create ``target`` for ``schema`` under ``mode``."""
-        self.execute(self._render_create_table(target, schema, mode))
+        """Create ``target`` for ``schema`` under ``mode``, or verify it.
 
-    def _render_create_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> str:
-        fqn = self._fqn(target)
-        col_defs = [self._render_column(c) for c in schema.columns]
-        col_defs.append(
-            f"\"{_INGESTED_AT}\" timestamptz not null default (now() at time zone 'UTC')"
+        With ``manage_ddl=True`` (default) this issues idempotent ``create
+        table if not exists`` DDL. With ``manage_ddl=False`` it executes
+        nothing and instead asserts the table exists and matches ``schema``,
+        raising with the SQL an external migration tool should apply.
+        """
+        if self.manage_ddl:
+            self.execute(render_create_table(target, schema, mode, if_not_exists=True))
+            return
+
+        if not self.table_exists(target):
+            raise TableNotFoundError(
+                self._fqn(target), self.render_create_table(target, schema, mode)
+            )
+
+        diff = self.diff_table(target, schema, mode)
+        if diff.is_empty:
+            return
+        migration = render_migration(target, diff) if diff.is_additive_only else None
+        raise SchemaDriftError(self._fqn(target), diff, migration)
+
+    def render_create_table(
+        self,
+        target: TableRef,
+        schema: TableSchema,
+        mode: WriteMode,
+        *,
+        if_not_exists: bool = False,
+        include_schema: bool = False,
+    ) -> str:
+        """The DDL this engine wants for ``target`` — as text, for a migration.
+
+        Needs no connection. See :mod:`datadongle.engines.postgres_ddl` for the
+        module-level equivalent, which needs no engine instance either.
+        """
+        return render_create_table(
+            target,
+            schema,
+            mode,
+            if_not_exists=if_not_exists,
+            include_schema=include_schema,
         )
-        if isinstance(mode, SCD2):
-            col_defs.append('"record_hash" text not null')
-            col_defs.append(
-                "\"valid_from\" timestamptz not null default (now() at time zone 'utc')"
-            )
-            col_defs.append('"valid_to" timestamptz')
 
-        ddl = f"create table if not exists {fqn} (\n  " + ",\n  ".join(col_defs) + "\n);\n"
+    def diff_table(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> SchemaDiff:
+        """Compare the live ``target`` against the ``schema`` a collector wants.
 
-        if isinstance(mode, SCD2):
-            ek = ", ".join(f'"{k}"' for k in mode.entity_key)
-            ddl += (
-                f"create unique index if not exists uq_{target.name}_entity_hash\n"
-                f'    on {fqn} ({ek}, "record_hash");\n'
-            )
-            ddl += (
-                f"create index if not exists ix_{target.name}_current\n"
-                f'    on {fqn} ({ek}) where "valid_to" is null;\n'
-            )
+        Pipeline columns this engine adds itself (``ingested_at`` and, under
+        SCD2, the versioning trio) are excluded — they're the engine's
+        business, not drift. Geometry and raster columns are checked by
+        presence only, since ``information_schema`` reports both as
+        ``USER-DEFINED``.
+        """
+        actual = self.table_column_types(target)
+        ignored = pipeline_columns(mode)
 
-        # A raster column gets a GiST index on its convex hull — that is what
-        # serves ST_Intersects(rast, point) sampling. Under SCD2 it is partial
-        # over current rows, since sampling queries filter to them.
-        for name in schema.raster_column_names():
-            ddl += (
-                f"create index if not exists ix_{target.name}_{name}\n"
-                f'    on {fqn} using gist (ST_ConvexHull("{name}"))'
-            )
-            if isinstance(mode, SCD2):
-                ddl += ' where "valid_to" is null'
-            ddl += ";\n"
-        return ddl
+        missing = [c for c in schema.columns if c.name not in actual]
+        declared = {c.name for c in schema.columns}
+        unexpected = sorted(n for n in actual if n not in declared and n not in ignored)
 
-    @staticmethod
-    def _render_column(col) -> str:
-        if col.type is ColumnType.GEOMETRY:
-            g = col.geometry
-            pg_type = f"geometry({g.kind},{g.srid})"
-        else:
-            pg_type = _PG_TYPES[col.type]
-        frag = f'"{col.name}" {pg_type}'
-        if not col.nullable:
-            frag += " not null"
-        return frag
+        mismatches = []
+        for col in schema.columns:
+            if col.name not in actual:
+                continue
+            expected = expected_information_schema_type(col)
+            if expected is None:
+                continue
+            found = canonical_type(actual[col.name])
+            if found != expected:
+                mismatches.append(TypeMismatch(column=col.name, expected=expected, actual=found))
+
+        return SchemaDiff(
+            missing_columns=missing,
+            unexpected_columns=unexpected,
+            type_mismatches=mismatches,
+        )
+
+    def render_migration(self, target: TableRef, schema: TableSchema, mode: WriteMode) -> str:
+        """``ALTER TABLE`` text bringing the live ``target`` up to ``schema``.
+
+        Empty when there's no drift. Raises ``ValueError`` when the drift is
+        not additive — a dropped or retyped column needs a decision about
+        existing rows that this can't make for you.
+        """
+        return render_migration(target, self.diff_table(target, schema, mode))
 
     def table_exists(self, target: TableRef) -> bool:
         df = self.query("select to_regclass(%(fqn)s) as reg", {"fqn": self._fqn(target)})
         return bool(df["reg"].iloc[0] is not None)
 
     def table_columns(self, target: TableRef) -> set[str]:
+        return set(self.table_column_types(target))
+
+    def table_column_types(self, target: TableRef) -> dict[str, str]:
+        """Map of column name -> ``information_schema`` data type for ``target``.
+
+        Empty if the table doesn't exist. Note that PostGIS geometry and raster
+        columns both report as ``USER-DEFINED``; their real detail comes from
+        :meth:`geometry_columns`.
+        """
         df = self.query(
             """
-            select column_name
+            select column_name, data_type
             from information_schema.columns
             where table_schema = %(schema)s and table_name = %(table)s
             """,
             {"schema": self._schema_of(target), "table": target.name},
         )
-        return set(df["column_name"]) if not df.empty else set()
+        if df.empty:
+            return {}
+        return dict(zip(df["column_name"], df["data_type"], strict=True))
 
     def geometry_columns(self, target: TableRef) -> dict[str, int]:
         return dict(self._get_geometry_info(target.name, self._schema_of(target)))

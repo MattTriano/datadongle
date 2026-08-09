@@ -179,8 +179,8 @@ Both engines yield the **same logical outcome** — identical row counts, the sa
 
 Both engines implement the same `Engine` protocol (`ensure_table`, `open_write`, `query`, `read_high_water_mark`, `table_columns`, `geometry_columns`, …), so they are interchangeable under `run_collection`.
 
-### `PostgresEngine(creds, db_name=None)`
-Postgres + PostGIS. `ensure_table` renders `CREATE TABLE IF NOT EXISTS` DDL (geometry columns become `geometry(<kind>,<srid>)`); writes go through a `COPY`-into-staging then per-mode merge (`append_merge` / `upsert_merge` / `scd2_merge` in `engines/postgres_load.py`). `query(...)` returns a `DataFrame`, or a `GeoDataFrame` when a PostGIS geometry column is present. Needs the `postgres` extra (and `geo` for geometry).
+### `PostgresEngine(creds, db_name=None, *, manage_ddl=True)`
+Postgres + PostGIS. `ensure_table` renders `CREATE TABLE IF NOT EXISTS` DDL (geometry columns become `geometry(<kind>,<srid>)`); writes go through a `COPY`-into-staging then per-mode merge (`append_merge` / `upsert_merge` / `scd2_merge` in `engines/postgres_load.py`). `query(...)` returns a `DataFrame`, or a `GeoDataFrame` when a PostGIS geometry column is present. Needs the `postgres` extra (and `geo` for geometry). See [Version-controlled DDL](#version-controlled-ddl) for `manage_ddl`.
 
 ### `IcebergEngine(warehouse, catalog_name="datadongle")`
 A local-filesystem Iceberg warehouse (PyIceberg + a SQLite catalog) queried through DuckDB. Geometry is stored as WKB `binary` with the SRID retained in table properties. Shape-B SCD2 keeps writes cheap (pure appends). Reads:
@@ -192,6 +192,69 @@ engine.query("select … from <table>_current where …")   # DuckDB SQL; <table
 ```
 
 Needs the `iceberg` extra (and `geo` for geometry). No native DuckDB extensions required.
+
+---
+
+## Version-controlled DDL
+
+By default `PostgresEngine` creates its own tables. If your schema is owned by a migration tool (Flyway, sqitch, a checked-in SQL script), you want the opposite: datadongle should *describe* the table it needs and let the migration tool apply it, so an ingestion run can never create a table your migration history has no record of.
+
+### Get the DDL
+
+`render_create_table` is a pure function of `(TableRef, TableSchema, WriteMode)` — no connection, no credentials:
+
+```python
+from datadongle.engines.postgres_ddl import render_create_table
+
+print(render_create_table(reader.target(spec), reader.schema(spec), reader.write_mode(spec)))
+```
+
+```sql
+create table raw_data.chicago_building_permits (
+  "permit_" text not null,
+  "issue_date" timestamptz,
+  "geom" geometry(Point,4326),
+  "ingested_at" timestamptz not null default (now() at time zone 'UTC'),
+  "record_hash" text not null,
+  "valid_from" timestamptz not null default (now() at time zone 'utc'),
+  "valid_to" timestamptz
+);
+
+create unique index uq_chicago_building_permits_entity_hash
+    on raw_data.chicago_building_permits ("permit_", "record_hash");
+
+create index ix_chicago_building_permits_current
+    on raw_data.chicago_building_permits ("permit_") where "valid_to" is null;
+```
+
+Note what a hand-written migration would have missed: `ingested_at` on every table, the SCD2 versioning trio, and two indexes the merge SQL depends on. That is why this is generated rather than transcribed.
+
+Output is bare DDL — a versioned migration runs exactly once, so an object that already exists should fail loudly. Pass `if_not_exists=True` for a Flyway repeatable (`R__`) migration, and `include_schema=True` to prepend `create schema if not exists <namespace>;`.
+
+Paste it into `V1__create_chicago_building_permits.sql` and run `flyway migrate`.
+
+### Hand over schema ownership
+
+```python
+engine = PostgresEngine(creds, manage_ddl=False)
+run_collection(reader, spec, engine, mode="full")
+```
+
+`ensure_table` now executes no DDL. It asserts the table exists and matches the collector's schema, raising `TableNotFoundError` (with the `create table` to apply) or `SchemaDriftError` (with the `alter table` to apply) instead of quietly creating or ignoring.
+
+### Handle drift
+
+When an upstream source adds a field, the next run fails with the migration you need rather than silently dropping the column:
+
+```python
+engine.diff_table(target, schema, mode)      # SchemaDiff: missing / unexpected / retyped
+engine.render_migration(target, schema, mode)
+# alter table raw_data.chicago_building_permits add column "applicant_name" text;
+```
+
+`render_migration` only handles **additive** drift. A dropped or retyped column raises instead, because resolving it needs a decision about existing rows that datadongle can't make for you — at a raw ingestion layer, writing to a new table version is usually safer than an in-place change. A `not null` column is added nullable with the constraint emitted as a commented-out follow-up, since `ADD COLUMN … NOT NULL` fails on a populated table.
+
+`IcebergEngine` is unaffected: it creates tables through the PyIceberg catalog API rather than SQL DDL, and has native schema evolution.
 
 ---
 

@@ -133,6 +133,10 @@ These are consumed, not implemented, by collector authors — but their semantic
 
 **High-water marks are read from the target table**, never from a run log (`engine.read_high_water_mark(target, cursor_spec)`), so incremental state self-heals if a table is dropped and rebuilt. The tracker records the HWM for observability only.
 
+**DDL ownership is the deployment's choice, but the renderer is always the source of truth.** By default an engine creates its own tables. Where an external migration tool owns the schema, `PostgresEngine(creds, manage_ddl=False)` makes `ensure_table` verify instead of create — raising `TableNotFoundError` or `SchemaDriftError`, each carrying the SQL to apply. Either way the DDL comes from the same renderer (`engines.postgres_ddl`, a pure function of `(TableRef, TableSchema, WriteMode)` that needs no connection), so a checked-in migration and an engine-created table cannot disagree. A collector author needs to know only that the target carries pipeline columns it never declares — `ingested_at` always, plus the engine's SCD2 columns under `SCD2` — and so MUST NOT declare them in `schema(spec)`.
+
+**Drift is reported, not silently absorbed.** `engine.diff_table(target, schema, mode)` returns an engine-neutral `SchemaDiff` (missing / unexpected / retyped columns, with engine-owned pipeline columns excluded). Only *additive* drift has a rendered fix (`render_migration`); a dropped or retyped column raises, because resolving it requires a decision about existing rows. This matters to readers because a schema that silently changes shape between runs re-versions every row under SCD2 — see the caveat about network-derived schemas in the CourtListener README.
+
 ## 8. The shared driver — and when you may deviate
 
 `datadongle.load.driver.run_collection(reader, spec, engine, tracker=None, *, mode)` is the one orchestration path:
