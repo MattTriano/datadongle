@@ -30,7 +30,9 @@ Three things about CourtListener shape this reader:
     ``(date_modified, id)``, and rows are filtered strictly-after client-side
     (numeric-aware id comparison, since ids land as text). Because increments
     only return rows that actually changed, representation differences between
-    a bulk seed and API updates never create spurious SCD2 versions.
+    a bulk seed and API updates never create spurious SCD2 versions. Resources
+    without a ``date_modified`` — the many-to-many through tables — fall back
+    to full reads; see ``resources.py``.
 
 **Caveat (same-table bulk + API):** bulk columns the API does not return land
 as NULL in post-backfill versions of a changed row, and a *full API* re-pull
@@ -55,6 +57,7 @@ from datadongle.collectors.courtlistener.client import (
     BULK_CSV_QUOTECHAR,
     CourtListenerClient,
 )
+from datadongle.collectors.courtlistener.resources import profile_from_columns
 from datadongle.collectors.courtlistener.spec import CourtListenerDatasetSpec
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
@@ -177,7 +180,25 @@ class CourtListenerReader:
         return Append()
 
     def cursor_spec(self, spec: CourtListenerDatasetSpec) -> CursorSpec | None:
+        """The incremental cursor, or ``None`` if this resource has no cursor column.
+
+        Not every CourtListener table carries ``date_modified`` — the
+        many-to-many through tables (the citation map, opinion-cluster panels)
+        have no timestamps at all. Rather than send a filter on a column that
+        doesn't exist, a resource whose discovered columns lack the cursor is
+        downgraded to full reads, which is correct if slower. That is
+        recoverable, so it warns rather than raising.
+        """
         if spec.cursor_column is None:
+            return None
+        if spec.cursor_column not in self._column_names(spec):
+            logger.warning(
+                "CourtListener %s has no %r column, so it cannot be read "
+                "incrementally; every run will be a full read. Set "
+                "cursor_column=None on the spec to silence this.",
+                spec.dataset_id,
+                spec.cursor_column,
+            )
             return None
         return CursorSpec(column=spec.cursor_column, tiebreak="id")
 
@@ -368,5 +389,28 @@ class CourtListenerReader:
                         f"given filters; its schema cannot be discovered."
                     )
                 names = list(self._transform_api_row(results[0]))
+            self._check_entity_key(spec, names)
             self._columns_cache[cache_key] = names
         return self._columns_cache[cache_key]
+
+    @staticmethod
+    def _check_entity_key(spec: CourtListenerDatasetSpec, columns: list[str]) -> None:
+        """Fail before any rows are read if the entity key isn't in the data.
+
+        Unlike a missing cursor column this is not recoverable: SCD2 keyed on a
+        column that doesn't exist versions every row against a NULL key, which
+        silently collapses the whole table into one entity. Better to stop at
+        the start of the run than to find out from the merged output.
+        """
+        if not spec.entity_key:
+            return
+        missing = [c for c in spec.entity_key if c not in columns]
+        if missing:
+            suggestion = profile_from_columns(spec.resource, columns)
+            raise ValueError(
+                f"CourtListener {spec.dataset_id!r} has no column(s) "
+                f"{', '.join(repr(c) for c in missing)}, but they are named in the "
+                f"spec's entity_key {spec.entity_key!r}. Its columns are: "
+                f"{', '.join(columns)}. Suggested entity_key for this resource: "
+                f"{suggestion.entity_key!r} — {suggestion.rationale}"
+            )

@@ -63,7 +63,46 @@ Caveats of the same-table design:
 
 - Bulk columns the API does not return land as `NULL` in post-backfill versions of a changed row.
 - Don't run `mode="full"` with `backfill="api"` over a bulk-seeded table — it would re-version rows on representation differences alone. Re-seed from a newer bulk file instead (SCD2 makes an unchanged re-seed a no-op).
-- Resources whose API endpoint and bulk prefix differ need one override, e.g. `resource="clusters", bulk_file_prefix="opinion-clusters"`. Bulk-only tables (no API endpoint) work with `cursor_column=None` — every run is then a full bulk read.
+- Resources whose API endpoint and bulk prefix differ need one override, e.g. `resource="clusters", bulk_file_prefix="opinion-clusters"` (`resources.py` records the ones this collector knows). Bulk-only tables (no API endpoint) work with `cursor_column=None` — every run is then a full bulk read.
+
+## Entity keys: `["id"]` is right for most resources, not all
+
+CourtListener's bulk exports are dumps of Django tables, so "what identifies a row" comes from the upstream schema. Three shapes:
+
+| Shape | Examples | `entity_key` | `cursor_column` |
+|---|---|---|---|
+| **Entity table** | dockets, opinions, people, courts, financial disclosures | `["id"]` | `"date_modified"` |
+| **Link table** (M2M through table) | citation map, opinion-cluster panels, `joined_by`, court `appeals_to` | its foreign-key pair | `None` |
+| **Reference table** | races, sources | `["id"]` | `None` |
+
+The spec's `["id"]` default is right for the entity tables that make up most of the catalog — including `courts`, whose `id` is a slug (`"scotus"`) rather than an integer.
+
+**It is wrong for the link tables.** Those carry an `id` only because Django adds one to every through table; the row's identity is its foreign-key pair. Keying on the surrogate means an upstream rebuild renumbers every row, and SCD2 reads that as "every entity replaced" — a full spurious re-version, with the old entities never closed out. Link tables also have no timestamps, so they need `cursor_column=None` and are read in full every run. That is what makes `SCD2(invalidate_missing=True)` worth setting for them: it records when a citation edge or panel assignment *disappeared*.
+
+Don't guess — ask, using the resource's actual columns:
+
+```python
+m.suggest_profile("dockets")
+# dockets: entity_key=['id'], cursor_column='date_modified'
+#   Entity table: 'id' is the upstream primary key.
+
+m.suggest_profiles()      # every resource with a bulk export, as a DataFrame
+```
+
+`suggest_profile` derives the answer from a streamed header peek, so it is correct for resources this collector has never seen. Review the rationale, then splat it into a spec:
+
+```python
+spec = CourtListenerDatasetSpec(
+    name="courtlistener_citation_map",
+    target_table="courtlistener_citation_map",
+    resource="citation-map",
+    **m.suggest_profile("citation-map").spec_kwargs(),
+)
+```
+
+`resources.py` holds a small registry for the cases column shape alone can't settle (the citation map has a `depth` payload, so it doesn't match the pure link-table signature) and where the API endpoint and bulk prefix differ (`clusters` → `opinion-clusters`). Everything else is derived.
+
+**The reader validates before reading.** If `entity_key` names a column the resource doesn't have, `schema()` raises with the actual column list and a suggestion — SCD2 on a missing key would silently collapse the whole table into one entity. A missing *cursor* column is recoverable, so it warns and falls back to full reads instead.
 
 ## Discovering resources — `CourtListenerMetadata`
 
@@ -77,6 +116,8 @@ m.describe("dockets")         # OPTIONS metadata (name, description)
 m.columns("dockets")          # field names/types (OPTIONS, else a sampled row)
 m.bulk_exports("dockets")     # available bulk files with dates and sizes
 m.bulk_columns("dockets")     # a bulk export's header (streamed peek, no download)
+m.suggest_profile("dockets")  # recommended entity_key / cursor_column + rationale
+m.suggest_profiles()          # the same for every resource, as a DataFrame
 ```
 
 ## Developed offline — facts to verify against the live source

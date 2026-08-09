@@ -17,6 +17,11 @@ from __future__ import annotations
 import pytest
 
 from datadongle.collectors.courtlistener.client import CourtListenerClient
+from datadongle.collectors.courtlistener.resources import (
+    CURSOR_COLUMN,
+    RESOURCES,
+    profile_from_columns,
+)
 
 pytestmark = pytest.mark.network
 
@@ -72,3 +77,53 @@ def test_bulk_header_peek_and_quotechar(client):
     assert "id" in header
     assert "date_modified" in header
     assert all(header), f"empty column name in parsed header: {header!r}"
+
+
+# --------------------------------------------------------- resource profiles
+
+# resources.RESOURCES was compiled without network access. These check every
+# entry against the live bulk exports; a failure means an entry is wrong, not
+# that the source changed.
+
+
+@pytest.mark.parametrize("resource", sorted(RESOURCES))
+def test_registry_entry_matches_the_live_columns(client, resource):
+    profile = RESOURCES[resource]
+    prefix = profile.bulk_file_prefix or resource
+    exports = client.list_bulk_exports(prefix)
+    assert exports, f"no bulk export named {prefix!r} — the registry key or prefix is wrong"
+
+    columns = client.read_bulk_header(exports[-1]["url"])
+
+    missing = [c for c in (profile.entity_key or []) if c not in columns]
+    assert not missing, f"{resource} entity_key names absent columns {missing}: {columns}"
+
+    has_cursor = CURSOR_COLUMN in columns
+    assert profile.is_incremental == has_cursor, (
+        f"{resource} registry says cursor_column={profile.cursor_column!r} but the "
+        f"live columns {'have' if has_cursor else 'lack'} {CURSOR_COLUMN!r}"
+    )
+
+
+def test_derivation_agrees_with_the_registry_where_both_apply(client):
+    """Where shape alone suffices, the registry should be redundant, not contradictory."""
+    columns = client.read_bulk_header(client.list_bulk_exports("courts")[-1]["url"])
+    derived = profile_from_columns("courts", columns)
+
+    assert derived.entity_key == ["id"]
+    assert derived.cursor_column == CURSOR_COLUMN
+
+
+def test_a_known_link_table_is_recognised_by_shape(client):
+    """The citation map is the through table the registry exists for.
+
+    If this starts passing `looks_like_link_table`, the registry entry has
+    become redundant and can be dropped.
+    """
+    exports = client.list_bulk_exports("citation-map")
+    if not exports:
+        pytest.skip("no citation-map bulk export published")
+    columns = client.read_bulk_header(exports[-1]["url"])
+
+    assert CURSOR_COLUMN not in columns, "citation-map gained timestamps; revisit the registry"
+    assert {"citing_opinion_id", "cited_opinion_id"} <= set(columns)

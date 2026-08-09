@@ -30,6 +30,10 @@ from __future__ import annotations
 import pandas as pd
 
 from datadongle.collectors.courtlistener.client import CourtListenerClient
+from datadongle.collectors.courtlistener.resources import (
+    ProfileSuggestion,
+    profile_from_columns,
+)
 
 
 class CourtListenerMetadata:
@@ -120,6 +124,52 @@ class CourtListenerMetadata:
             raise ValueError(f"No bulk export found for {resource!r}.")
         latest = max(exports, key=lambda e: e["date"])
         return self.client.read_bulk_header(latest["url"])
+
+    # ------------------------------------------------------------------
+    # Spec suggestions
+    # ------------------------------------------------------------------
+
+    def suggest_profile(self, resource: str) -> ProfileSuggestion:
+        """Recommend ``entity_key`` and ``cursor_column`` for one resource.
+
+        Reads the resource's bulk header (a streamed peek, not a download) and
+        derives the answer from its actual columns, so it is right even for
+        resources datadongle has never seen. The result carries a rationale;
+        review it before pasting into a spec.
+
+            >>> m.suggest_profile("dockets")            # doctest: +SKIP
+            dockets: entity_key=['id'], cursor_column='date_modified'
+              Entity table: 'id' is the upstream primary key.
+        """
+        columns = self.bulk_columns(resource)
+        return ProfileSuggestion(
+            resource=resource,
+            profile=profile_from_columns(resource, columns),
+            columns=columns,
+        )
+
+    def suggest_profiles(self) -> pd.DataFrame:
+        """``suggest_profile`` for every resource with a bulk export.
+
+        One header peek per resource, so this is the slow-but-thorough way to
+        produce a reviewed set of specs in one pass. Columns: ``resource``,
+        ``entity_key``, ``cursor_column``, ``incremental``, ``rationale``.
+        """
+        rows = []
+        for resource in sorted(self.bulk_exports()["prefix"].unique()):
+            suggestion = self.suggest_profile(resource)
+            rows.append(
+                {
+                    "resource": resource,
+                    "entity_key": suggestion.profile.entity_key,
+                    "cursor_column": suggestion.profile.cursor_column,
+                    "incremental": suggestion.profile.is_incremental,
+                    "rationale": suggestion.profile.rationale,
+                }
+            )
+        return pd.DataFrame(
+            rows, columns=["resource", "entity_key", "cursor_column", "incremental", "rationale"]
+        )
 
     # ------------------------------------------------------------------
     # Helpers

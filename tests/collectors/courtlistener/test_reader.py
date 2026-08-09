@@ -8,6 +8,8 @@ incremental API updates into the same table.
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from datadongle.collectors.courtlistener.reader import CourtListenerReader, _tie_key
@@ -19,7 +21,7 @@ from datadongle.engines.iceberg import IcebergEngine
 from datadongle.load.driver import run_collection
 
 from ..common import NoopTracker
-from .helpers import API, FakeCourtListenerClient, fake_client, make_spec
+from .helpers import API, FakeCourtListenerClient, fake_client, make_bulk_bz2, make_spec
 
 
 def _reader(**client_kwargs) -> CourtListenerReader:
@@ -37,6 +39,76 @@ def test_cursor_spec_date_modified_with_id_tiebreak():
     reader = _reader()
     assert reader.cursor_spec(make_spec()) == CursorSpec(column="date_modified", tiebreak="id")
     assert reader.cursor_spec(make_spec(cursor_column=None)) is None
+
+
+# ------------------------------------------- resources without a date_modified
+
+# A Django many-to-many through table: surrogate id, two foreign keys, no
+# timestamps. Nothing about it is incrementally queryable.
+LINK_COLUMNS = ["id", "opinioncluster_id", "person_id"]
+LINK_URL = "https://example.invalid/bulk-data/panel-2024-01-31.csv.bz2"
+LINK_EXPORTS = [
+    {
+        "prefix": "panel",
+        "date": "2024-01-31",
+        "filename": "panel-2024-01-31.csv.bz2",
+        "url": LINK_URL,
+        "size": 10,
+    }
+]
+
+
+def _link_reader() -> CourtListenerReader:
+    rows = [{"id": "1", "opinioncluster_id": "10", "person_id": "20"}]
+    return CourtListenerReader(
+        client=FakeCourtListenerClient(
+            bulk_files={LINK_URL: make_bulk_bz2(rows, columns=LINK_COLUMNS)},
+            exports=LINK_EXPORTS,
+        )
+    )
+
+
+def _link_spec(**overrides):
+    defaults = dict(resource="panel", entity_key=["opinioncluster_id", "person_id"])
+    defaults.update(overrides)
+    return make_spec(**defaults)
+
+
+def test_cursor_spec_downgrades_to_full_reads_when_the_column_is_absent(caplog):
+    """A through table has no date_modified; filtering on it would be nonsense."""
+    reader = _link_reader()
+
+    with caplog.at_level(logging.WARNING):
+        assert reader.cursor_spec(_link_spec()) is None
+
+    assert "cannot be read incrementally" in caplog.text
+
+
+def test_entity_key_naming_a_missing_column_fails_before_any_rows_are_read():
+    """SCD2 on a nonexistent key collapses the table into one entity — stop first."""
+    reader = _link_reader()
+
+    with pytest.raises(ValueError, match="entity_key") as exc:
+        reader.schema(_link_spec(entity_key=["cluster_id"]))
+
+    # The error names what's wrong, what exists, and what to use instead.
+    assert "'cluster_id'" in str(exc.value)
+    assert "opinioncluster_id" in str(exc.value)
+    assert "Suggested entity_key" in str(exc.value)
+
+
+def test_entity_key_opt_out_skips_validation():
+    reader = _link_reader()
+    assert reader.write_mode(_link_spec(entity_key=None)) == Append()
+    assert reader.schema(_link_spec(entity_key=None)).column_names() == LINK_COLUMNS
+
+
+def test_a_valid_natural_entity_key_passes_validation():
+    reader = _link_reader()
+    schema = reader.schema(_link_spec())
+
+    assert schema.column_names() == LINK_COLUMNS
+    assert reader.write_mode(_link_spec()) == SCD2(entity_key=["opinioncluster_id", "person_id"])
 
 
 def test_write_mode_scd2_with_entity_key_else_append():

@@ -54,9 +54,16 @@ class CourtListenerDatasetSpec(DatasetSpec):
     target_schema : str
         Destination schema/namespace. Default ``"raw_data"``.
     entity_key : list[str] | None
-        Columns uniquely identifying an entity. Every CourtListener table has
-        a stable primary key ``id``, so this defaults to ``["id"]`` (⇒ SCD2
-        history). Pass ``None`` to opt out (Append).
+        Columns uniquely identifying an entity. Defaults to ``["id"]`` (⇒ SCD2
+        history), which is right for the entity tables that make up most of the
+        catalog. It is **wrong for the many-to-many through tables** (the
+        citation map, opinion-cluster panels, ``joined_by``): those carry an
+        ``id`` only because Django adds one, and keying on it means an upstream
+        rebuild renumbers every row and SCD2 re-versions the whole table. Key
+        those on their foreign-key pair instead. Use
+        ``CourtListenerMetadata.suggest_profile(resource)`` to get the right
+        value for any resource. Pass ``None`` to opt out of versioning
+        (Append). The reader validates these columns exist before reading.
     backfill : str
         How a **full** read (``mode="full"``, or the first incremental run
         against an empty table) is performed. ``"bulk"`` (default) downloads
@@ -78,8 +85,10 @@ class CourtListenerDatasetSpec(DatasetSpec):
         filename). ``None`` (default) means the latest available export.
     cursor_column : str | None
         The incremental high-water-mark column. Default ``"date_modified"``,
-        which every CourtListener table carries. Set ``None`` for resources
-        that are not incrementally queryable (every run is then a full read).
+        which every *entity* table carries — but the through tables have no
+        timestamps at all, so set ``None`` for those (every run is then a full
+        read). A resource whose discovered columns lack the cursor is
+        downgraded to full reads with a warning rather than failing.
     """
 
     name: str
