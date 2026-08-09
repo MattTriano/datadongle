@@ -14,9 +14,17 @@ corresponding constant/behavior in client.py or reader.py needs adjusting.
 
 from __future__ import annotations
 
+import bz2
+import csv
+
 import pytest
 
-from datadongle.collectors.courtlistener.client import CourtListenerClient
+from datadongle.collectors.courtlistener.client import (
+    BULK_CSV_QUOTECHAR,
+    CourtListenerClient,
+    check_bulk_quoting,
+)
+from datadongle.collectors.courtlistener.reader import normalize_timestamp
 from datadongle.collectors.courtlistener.resources import (
     CURSOR_COLUMN,
     RESOURCES,
@@ -77,6 +85,24 @@ def test_bulk_header_peek_and_quotechar(client):
     assert "id" in header
     assert "date_modified" in header
     assert all(header), f"empty column name in parsed header: {header!r}"
+
+
+def test_bulk_data_rows_parse_without_residual_quotes(client, tmp_path):
+    """The header alone doesn't catch a quotechar mismatch — data rows do.
+
+    The header line is unquoted while data rows are force-quoted, so a wrong
+    BULK_CSV_QUOTECHAR parses the header cleanly and then silently wraps every
+    data value in literal quotes. `courts` is the smallest export, so this
+    downloads it in full and checks the first row.
+    """
+    exports = client.list_bulk_exports("courts")
+    path = client.download_bulk(exports[-1]["url"], tmp_path / "courts.csv.bz2")
+
+    with bz2.open(path, mode="rt", encoding="utf-8", newline="") as f:
+        row = next(csv.DictReader(f, delimiter=",", quotechar=BULK_CSV_QUOTECHAR))
+
+    check_bulk_quoting(row)  # raises if the quoting has changed
+    normalize_timestamp(row["date_modified"], "date_modified")  # raises if still quoted
 
 
 # --------------------------------------------------------- resource profiles

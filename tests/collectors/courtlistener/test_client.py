@@ -9,6 +9,7 @@ import pytest
 from datadongle.collectors.courtlistener.client import (
     CourtListenerClient,
     _parse_bucket_listing,
+    check_bulk_quoting,
     parse_bulk_header_line,
 )
 
@@ -135,8 +136,40 @@ def test_list_bulk_exports_paginates_filters_and_sorts(monkeypatch):
 # ------------------------------------------------------------ bulk header
 
 
-def test_parse_bulk_header_line_uses_backtick_quoting():
-    assert parse_bulk_header_line("id,`case,name`,court_id") == ["id", "case,name", "court_id"]
+def test_parse_bulk_header_line_uses_standard_csv_quoting():
+    assert parse_bulk_header_line('id,"case,name",court_id') == ["id", "case,name", "court_id"]
+
+
+# ------------------------------------------------------- quoting mismatch guard
+
+
+def test_quoting_check_passes_on_correctly_parsed_rows():
+    check_bulk_quoting({"id": "1", "case_name": "Roe v. Wade", "court_id": "ca9"})
+
+
+def test_quoting_check_catches_values_that_kept_their_quotes():
+    """If the export reverts to the backtick its docs describe, say so loudly.
+
+    This is the mirror of the live failure that motivated the guard: values
+    arriving still wrapped means the quotechar we parsed with isn't the one
+    the file was written with, and every text column is corrupt.
+    """
+    row = {
+        "id": "`1`",
+        "date_modified": "`2016-09-08 20:38:41.131652+00`",
+        "court_id": "`ca9`",
+    }
+    with pytest.raises(ValueError, match="still carry '`' quotes"):
+        check_bulk_quoting(row)
+
+
+def test_quoting_check_ignores_a_single_legitimately_quoted_value():
+    """One quoted-looking value is data; every value quoted is a parse error."""
+    check_bulk_quoting({"id": "1", "case_name": "`backticked`", "court_id": "ca9"})
+
+
+def test_quoting_check_needs_enough_values_to_judge():
+    check_bulk_quoting({"id": "`1`"})
 
 
 class _DummyStreamResponse:

@@ -56,6 +56,7 @@ from typing import Any
 from datadongle.collectors.courtlistener.client import (
     BULK_CSV_QUOTECHAR,
     CourtListenerClient,
+    check_bulk_quoting,
 )
 from datadongle.collectors.courtlistener.resources import profile_from_columns
 from datadongle.collectors.courtlistener.spec import CourtListenerDatasetSpec
@@ -262,7 +263,11 @@ class CourtListenerReader:
         batch: list[dict[str, Any]] = []
         with bz2.open(filepath, mode="rt", encoding="utf-8", newline="") as f:
             reader = csv.DictReader(f, delimiter=",", quotechar=BULK_CSV_QUOTECHAR)
-            for row in reader:
+            for index, row in enumerate(reader):
+                if index == 0:
+                    # One cheap look before ingesting: a quotechar mismatch
+                    # corrupts every text column without raising on its own.
+                    check_bulk_quoting(row)
                 clean = {k: (v if v != "" else None) for k, v in row.items()}
                 for column in TS_COLUMNS:
                     value = clean.get(column)

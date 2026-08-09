@@ -16,10 +16,11 @@ Bulk docs: https://www.courtlistener.com/help/api/bulk-data/
 
 NOTE (developed offline — verify against the live source; see the network
 tests in ``tests/collectors/courtlistener/test_live.py``):
-  - the bulk S3 bucket URL and its ``list-type=2`` listing behavior
-  - ``BULK_CSV_QUOTECHAR``: bulk CSVs are documented as quoting with a
-    backtick (chosen because the data itself is full of double-quotes)
   - the ``page_size`` query parameter and its maximum
+
+Verified against the live source: the bulk bucket URL and its ``list-type=2``
+listing, and ``BULK_CSV_QUOTECHAR`` (standard ``"`` quoting, not the backtick
+the bulk-data docs describe).
 
 Usage:
     from datadongle.collectors.courtlistener.client import CourtListenerClient
@@ -53,9 +54,24 @@ API_BASE = "https://www.courtlistener.com/api/rest/v4"
 BULK_STORAGE_URL = "https://com-courtlistener-storage.s3-us-west-2.amazonaws.com/"
 BULK_KEY_PREFIX = "bulk-data/"
 
-# Bulk CSVs quote with a backtick instead of a double-quote (court text is
-# full of double-quotes); delimiter is a comma.
-BULK_CSV_QUOTECHAR = "`"
+# Bulk CSVs are standard comma-delimited, double-quote-quoted CSV.
+#
+# CourtListener's bulk-data docs describe a backtick quotechar (chosen, they
+# say, because court text is full of double-quotes), and this collector
+# believed them until a live run against the `courts` export came back with
+# values like '"2016-09-08 20:38:41.131652+00"' — quotes retained, because a
+# backtick quotechar leaves '"' as an ordinary character. The header line is
+# *not* quoted while data rows are, which is what PostgreSQL's
+# `COPY ... WITH (FORMAT csv, HEADER, FORCE_QUOTE *)` emits.
+#
+# Getting this wrong is quiet: only the timestamp columns are validated, so
+# every other column would land wrapped in literal quotes, and any field
+# containing a comma would be split across columns. `check_bulk_quoting`
+# below turns that into a loud failure.
+BULK_CSV_QUOTECHAR = '"'
+
+# Quote characters a bulk export might plausibly use, for the parse check.
+_PLAUSIBLE_QUOTECHARS = ('"', "`")
 
 _BULK_FILENAME = re.compile(r"^(?P<prefix>.+)-(?P<date>\d{4}-\d{2}-\d{2})\.csv\.bz2$")
 
@@ -63,6 +79,30 @@ _BULK_FILENAME = re.compile(r"^(?P<prefix>.+)-(?P<date>\d{4}-\d{2}-\d{2})\.csv\.
 def parse_bulk_header_line(line: str) -> list[str]:
     """Parse one bulk-CSV header line into column names."""
     return next(csv.reader([line], delimiter=",", quotechar=BULK_CSV_QUOTECHAR))
+
+
+def check_bulk_quoting(row: dict[str, Any]) -> None:
+    """Raise if ``row`` looks like it was parsed with the wrong quote character.
+
+    A parsed value that still carries matching quotes around it means the
+    quotechar we used isn't the one the file was written with — the quotes
+    were treated as ordinary characters instead of being stripped. Left
+    unchecked that corrupts every text column silently (and splits any field
+    containing a comma), so it is worth one cheap look at the first row.
+    """
+    values = [v for v in row.values() if isinstance(v, str) and len(v) >= 2]
+    if len(values) < 2:
+        return
+    for quotechar in _PLAUSIBLE_QUOTECHARS:
+        if quotechar == BULK_CSV_QUOTECHAR:
+            continue
+        if all(v.startswith(quotechar) and v.endswith(quotechar) for v in values):
+            raise ValueError(
+                f"Bulk CSV values still carry {quotechar!r} quotes after parsing "
+                f"with quotechar {BULK_CSV_QUOTECHAR!r} — the export's quoting has "
+                f"changed. Set BULK_CSV_QUOTECHAR to {quotechar!r}. Sample: "
+                f"{dict(list(row.items())[:3])}"
+            )
 
 
 def _parse_bucket_listing(xml_bytes: bytes) -> tuple[list[dict[str, Any]], str | None]:
