@@ -115,10 +115,32 @@ m.search("docket")            # endpoints matching a substring
 m.describe("dockets")         # OPTIONS metadata (name, description)
 m.columns("dockets")          # field names/types (OPTIONS, else a sampled row)
 m.bulk_exports("dockets")     # available bulk files with dates and sizes
+m.bulk_datasets()             # every table published in bulk, one row each
+m.coverage()                  # API endpoints vs bulk exports
 m.bulk_columns("dockets")     # a bulk export's header (streamed peek, no download)
 m.suggest_profile("dockets")  # recommended entity_key / cursor_column + rationale
 m.suggest_profiles()          # the same for every resource, as a DataFrame
 ```
+
+### Not every endpoint has a bulk export
+
+The API root lists ~48 endpoints, but a good third of them are per-user state or RPC-style operations with no table behind them — `alerts`, `docket-alerts`, `tag`/`tags`, `api-usage`, `memberships`, `prayers`, `citation-lookup`, `search`, `visualizations`, and the `recap-*` family. Those are API-only by nature, not gaps in the bulk coverage.
+
+**The two namespaces don't line up by name.** `bulk_exports("clusters")` returns nothing because that table is published as `opinion-clusters`; `bulk_exports("agreements")` returns nothing because it's published under a `financial-disclosure-` qualifier. The filter is a literal S3 key prefix, so an empty result means *"no file is named that"*, never *"this data isn't published in bulk."*
+
+`coverage()` reconciles the two and suggests likely renames:
+
+```python
+m.coverage()
+#   name         api   bulk   bulk_prefix        candidates
+#   agreements   True  False  None               ['financial-disclosure-agreements']
+#   alerts       True  False  None               []
+#   citation-map False True   citation-map       []
+#   clusters     True  True   opinion-clusters   []
+#   dockets      True  True   dockets            []
+```
+
+A non-empty `candidates` is a hint to check with `bulk_columns`, not a conclusion. Once confirmed, record the mapping as `bulk_file_prefix` on the spec (or add it to `resources.py` so it's version-controlled). Rows with `api=False` are bulk-only — the through tables — and need `backfill="bulk"` with `cursor_column=None`.
 
 ## Developed offline — facts to verify against the live source
 

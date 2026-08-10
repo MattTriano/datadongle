@@ -23,6 +23,15 @@ Usage:
     m.describe("dockets")            # OPTIONS metadata for one endpoint
     m.columns("dockets")             # field names/types for one endpoint
     m.bulk_exports("dockets")        # available bulk files with dates/sizes
+    m.bulk_datasets()                # every table published in bulk
+    m.coverage()                     # API endpoints vs bulk exports
+
+Not every API endpoint has a bulk export: many are per-user state or
+RPC-style operations (``alerts``, ``search``, ``recap-fetch``) with no table
+behind them. And the two namespaces don't line up by name — ``clusters`` is
+exported as ``opinion-clusters`` — so a name-filtered lookup returning
+nothing is not proof the data isn't published. :meth:`coverage` reconciles
+the two.
 """
 
 from __future__ import annotations
@@ -31,9 +40,20 @@ import pandas as pd
 
 from datadongle.collectors.courtlistener.client import CourtListenerClient
 from datadongle.collectors.courtlistener.resources import (
+    RESOURCES,
     ProfileSuggestion,
     profile_from_columns,
 )
+
+
+def _name_candidates(endpoint: str, prefixes: set[str]) -> list[str]:
+    """Bulk prefixes that might be ``endpoint`` under a different name.
+
+    Substring either way, since the bulk name is usually the endpoint name
+    with a qualifier bolted on (``agreements`` →
+    ``financial-disclosure-agreements``) and occasionally the reverse.
+    """
+    return sorted(p for p in prefixes if endpoint in p or p in endpoint)
 
 
 class CourtListenerMetadata:
@@ -111,9 +131,104 @@ class CourtListenerMetadata:
 
         Columns: ``prefix``, ``date``, ``filename``, ``size``, ``url``.
         ``resource`` filters to one table's files; ``None`` lists everything.
+
+        The filter is a **literal key prefix**, so it only matches files whose
+        name starts with ``resource``. An empty result means "no file is named
+        that", not "this data isn't published in bulk" — the bulk prefix often
+        differs from the API endpoint name (``clusters`` is exported as
+        ``opinion-clusters``). Use :meth:`bulk_datasets` for the real list.
         """
         exports = self.client.list_bulk_exports(resource)
         return pd.DataFrame(exports, columns=["prefix", "date", "filename", "size", "url"])
+
+    def bulk_datasets(self) -> pd.DataFrame:
+        """Every dataset available for bulk collection, one row per table.
+
+        This is the authoritative answer to "what can I backfill from bulk?" —
+        it reads the whole bucket rather than guessing at a name. The
+        ``prefix`` value goes into a spec's ``resource`` (or
+        ``bulk_file_prefix`` where the API endpoint is named differently).
+
+        Columns: ``prefix``, ``exports``, ``first_date``, ``latest_date``,
+        ``latest_size``.
+        """
+        columns = ["prefix", "exports", "first_date", "latest_date", "latest_size"]
+        df = self.bulk_exports()
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+
+        rows = []
+        for prefix, group in df.sort_values("date").groupby("prefix"):
+            rows.append(
+                {
+                    "prefix": prefix,
+                    "exports": len(group),
+                    "first_date": group["date"].iloc[0],
+                    "latest_date": group["date"].iloc[-1],
+                    "latest_size": group["size"].iloc[-1],
+                }
+            )
+        return pd.DataFrame(rows, columns=columns).sort_values("prefix", ignore_index=True)
+
+    def coverage(self) -> pd.DataFrame:
+        """Reconcile API endpoints against bulk exports.
+
+        Answers "which resources can I backfill from bulk, and which are
+        API-only?" in one table. Many API endpoints are per-user state or
+        RPC-style operations (``alerts``, ``search``, ``recap-fetch``) with no
+        table behind them, so ``bulk=False`` is normal rather than a gap.
+
+        Where an endpoint has no same-named export, ``candidates`` lists bulk
+        prefixes whose name contains the endpoint's (or vice versa) — that is
+        how ``clusters`` relates to ``opinion-clusters``. These are hints to
+        check with :meth:`bulk_columns`, not conclusions.
+
+        Columns: ``name``, ``api``, ``bulk``, ``bulk_prefix``, ``candidates``.
+        """
+        endpoints = set(self.endpoints()["name"])
+        datasets = self.bulk_datasets()
+        prefixes = set(datasets["prefix"]) if not datasets.empty else set()
+
+        # Endpoint -> bulk prefix, for the mismatches this collector knows.
+        known = {
+            name: profile.bulk_file_prefix
+            for name, profile in RESOURCES.items()
+            if profile.bulk_file_prefix
+        }
+
+        rows = []
+        matched: set[str] = set()
+        for name in sorted(endpoints):
+            prefix = known.get(name, name)
+            has_bulk = prefix in prefixes
+            if has_bulk:
+                matched.add(prefix)
+            rows.append(
+                {
+                    "name": name,
+                    "api": True,
+                    "bulk": has_bulk,
+                    "bulk_prefix": prefix if has_bulk else None,
+                    "candidates": [] if has_bulk else _name_candidates(name, prefixes),
+                }
+            )
+
+        # Bulk tables with no same-named endpoint — the through tables and
+        # anything the API doesn't surface. These are bulk-only by nature.
+        for prefix in sorted(prefixes - matched):
+            rows.append(
+                {
+                    "name": prefix,
+                    "api": False,
+                    "bulk": True,
+                    "bulk_prefix": prefix,
+                    "candidates": [],
+                }
+            )
+
+        return pd.DataFrame(
+            rows, columns=["name", "api", "bulk", "bulk_prefix", "candidates"]
+        ).sort_values("name", ignore_index=True)
 
     def bulk_columns(self, resource: str, date: str | None = None) -> list[str]:
         """A bulk export's column names (a cheap streamed header peek)."""
