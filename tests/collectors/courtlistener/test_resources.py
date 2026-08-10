@@ -7,8 +7,10 @@ import pytest
 from datadongle.collectors.courtlistener.resources import (
     RESOURCES,
     ProfileSuggestion,
+    bulk_prefix_for,
     looks_like_link_table,
     profile_from_columns,
+    registry_lookup,
 )
 
 # A dockets-shaped entity table.
@@ -91,6 +93,28 @@ def test_registry_entry_wins_over_shape_derivation():
 def test_clusters_records_the_endpoint_prefix_mismatch():
     assert RESOURCES["clusters"].bulk_file_prefix == "opinion-clusters"
     assert RESOURCES["clusters"].entity_key == ["id"]
+
+
+def test_bulk_prefix_maps_an_endpoint_to_its_export_name():
+    assert bulk_prefix_for("clusters") == "opinion-clusters"
+
+
+def test_bulk_prefix_passes_through_unregistered_names():
+    assert bulk_prefix_for("dockets") == "dockets"
+
+
+def test_registry_resolves_from_either_namespace():
+    """Callers hold an endpoint name or a bulk prefix; both must find the entry."""
+    assert registry_lookup("clusters") is RESOURCES["clusters"]
+    assert registry_lookup("opinion-clusters") is RESOURCES["clusters"]
+    assert registry_lookup("dockets") is None
+
+
+def test_profile_lookup_by_bulk_prefix_matches_lookup_by_endpoint():
+    columns = ["id", "date_created", "date_modified", "case_name"]
+    assert profile_from_columns("opinion-clusters", columns) is profile_from_columns(
+        "clusters", columns
+    )
 
 
 @pytest.mark.parametrize("resource", sorted(RESOURCES))

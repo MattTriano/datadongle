@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from datadongle.collectors.base_spec import DatasetSpec
+from datadongle.collectors.courtlistener.resources import bulk_prefix_for
 
 _BULK_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -126,8 +127,19 @@ class CourtListenerDatasetSpec(DatasetSpec):
 
     @property
     def file_prefix(self) -> str:
-        """The bulk filename prefix (``bulk_file_prefix`` override, else ``resource``)."""
-        return self.bulk_file_prefix or self.resource
+        """The bulk filename prefix for this resource.
+
+        An explicit ``bulk_file_prefix`` wins; otherwise the rename registry in
+        ``resources.py`` is consulted, so ``resource="clusters"`` finds the
+        ``opinion-clusters`` export without the caller restating it. Falls back
+        to ``resource`` when the two names agree, which is the common case.
+
+        Only the *name mapping* is resolved automatically — it's a mechanical
+        fact about how files are published, checked into ``resources.py``.
+        ``entity_key`` stays explicit, because that's a modelling decision that
+        should be visible in the spec.
+        """
+        return self.bulk_file_prefix or bulk_prefix_for(self.resource)
 
     @property
     def dataset_id(self) -> str:

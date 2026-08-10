@@ -108,6 +108,36 @@ def looks_like_link_table(columns: list[str]) -> bool:
     return len(fks) == 2 and len(columns) == 3
 
 
+def registry_lookup(resource: str) -> ResourceProfile | None:
+    """The registry entry for ``resource``, by API endpoint *or* bulk prefix.
+
+    The registry is keyed by API endpoint name, but callers legitimately hold
+    either name — ``bulk_datasets()`` yields bulk prefixes, specs carry
+    endpoints. Looking up both ways keeps ``clusters`` and
+    ``opinion-clusters`` from resolving differently.
+    """
+    if resource in RESOURCES:
+        return RESOURCES[resource]
+    for profile in RESOURCES.values():
+        if profile.bulk_file_prefix == resource:
+            return profile
+    return None
+
+
+def bulk_prefix_for(resource: str) -> str:
+    """The bulk-file prefix for ``resource``.
+
+    The API endpoint name and the bulk filename are separate namespaces —
+    ``clusters`` is published as ``opinion-clusters`` — so anything that turns
+    a resource name into a bucket lookup has to go through here, or it asks S3
+    for a file that doesn't exist and concludes the data isn't published.
+    """
+    profile = RESOURCES.get(resource)
+    if profile is not None and profile.bulk_file_prefix:
+        return profile.bulk_file_prefix
+    return resource
+
+
 def profile_from_columns(resource: str, columns: list[str]) -> ResourceProfile:
     """Derive how ``resource`` should be collected from its actual columns.
 
@@ -116,8 +146,9 @@ def profile_from_columns(resource: str, columns: list[str]) -> ResourceProfile:
     its foreign-key pair, anything with an ``id`` keys on that, and a resource
     with neither gets ``entity_key=None`` for the caller to resolve.
     """
-    if resource in RESOURCES:
-        return RESOURCES[resource]
+    registered = registry_lookup(resource)
+    if registered is not None:
+        return registered
 
     cursor = CURSOR_COLUMN if CURSOR_COLUMN in columns else None
 

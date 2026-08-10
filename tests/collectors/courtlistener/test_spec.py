@@ -54,6 +54,24 @@ def test_endpoint_and_prefix_overrides():
     assert spec.file_prefix == "opinion-clusters"
 
 
+def test_known_rename_resolves_without_restating_it():
+    """A bulk-then-API spec names the resource once; the registry knows the rest."""
+    spec = make_spec(resource="clusters")
+
+    assert spec.endpoint == "clusters"  # API side
+    assert spec.file_prefix == "opinion-clusters"  # bulk side
+
+
+def test_explicit_prefix_still_wins_over_the_registry():
+    spec = make_spec(resource="clusters", bulk_file_prefix="something-else")
+    assert spec.file_prefix == "something-else"
+
+
+def test_unregistered_resource_uses_its_own_name_for_both():
+    spec = make_spec(resource="dockets")
+    assert spec.endpoint == spec.file_prefix == "dockets"
+
+
 def test_dataset_id_includes_sorted_filters():
     assert make_spec().dataset_id == "dockets"
     spec = make_spec(backfill="api", filters={"court": "scotus", "blocked": "false"})

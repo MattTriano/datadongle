@@ -55,6 +55,28 @@ spec = CourtListenerDatasetSpec(
 - **Computed fields** (`absolute_url`, `resource_uri`) are dropped; **nested lists/objects** are JSON-encoded; **booleans** land as `"true"`/`"false"`.
 - **Timestamps are canonicalized**: `date_created`/`date_modified` become `YYYY-MM-DD HH:MM:SS.ffffff+00:00` in both paths, so the text-typed high-water mark orders correctly across bulk- and API-sourced rows. Both are flagged bookkeeping (`metadata=True`), so a re-pull that only bumps `date_modified` creates no spurious SCD2 version.
 
+## Bulk backfill + API increments
+
+This is the collector's headline flow, and it needs no extra configuration — `backfill="bulk"` plus the shared driver:
+
+```python
+spec = CourtListenerDatasetSpec(
+    name="courtlistener_clusters",
+    target_table="courtlistener_clusters",
+    resource="clusters",          # the API endpoint name
+    backfill="bulk",              # a full read comes from the monthly export
+)
+
+run_collection(reader, spec, engine, mode="full")          # seed from bulk
+run_collection(reader, spec, engine, mode="incremental")   # API deltas, forever after
+```
+
+**Name the resource once.** `resource` is the API endpoint; the bulk prefix is resolved through the rename registry in `resources.py`, so `clusters` finds the `opinion-clusters` export without you restating it. An explicit `bulk_file_prefix` still wins if you need to override, and for the majority of resources — where both names agree — there's nothing to set. Only the *name mapping* resolves automatically; `entity_key` stays explicit, because that's a modelling decision that belongs in the spec where you can see it.
+
+**A scheduled job can just always run `mode="incremental"`.** The driver reads the high-water mark from the target table; on an empty or absent table that comes back `None`, which is a full read, which under `backfill="bulk"` is the bulk export. So the first run seeds itself from bulk and every subsequent run pages the API — one cron entry, no first-run special case.
+
+To re-seed later from a newer monthly export, run `mode="full"` again. SCD2 makes that cheap: rows that haven't changed produce no new version.
+
 ## Incremental collection
 
 The cursor is `date_modified` (every CourtListener table carries it) with an `id` tiebreak. An incremental run reads the target's max `(date_modified, id)`, asks the API for `date_modified__gte=<hwm>` ordered by `(date_modified, id)`, and keeps only strictly-later rows — ids are compared numerically where they are integers (courts uses slugs). Since increments return only rows that actually changed, formatting differences between the bulk seed and API updates never create spurious versions.

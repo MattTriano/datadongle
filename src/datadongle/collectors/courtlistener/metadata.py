@@ -42,6 +42,7 @@ from datadongle.collectors.courtlistener.client import CourtListenerClient
 from datadongle.collectors.courtlistener.resources import (
     RESOURCES,
     ProfileSuggestion,
+    bulk_prefix_for,
     profile_from_columns,
 )
 
@@ -252,11 +253,15 @@ class CourtListenerMetadata:
         resources datadongle has never seen. The result carries a rationale;
         review it before pasting into a spec.
 
+        Accepts either name: an API endpoint (``clusters``) or a bulk prefix
+        (``opinion-clusters``). The bucket lookup goes through the rename
+        registry, so ``clusters`` doesn't fail for want of a same-named file.
+
             >>> m.suggest_profile("dockets")            # doctest: +SKIP
             dockets: entity_key=['id'], cursor_column='date_modified'
               Entity table: 'id' is the upstream primary key.
         """
-        columns = self.bulk_columns(resource)
+        columns = self.bulk_columns(bulk_prefix_for(resource))
         return ProfileSuggestion(
             resource=resource,
             profile=profile_from_columns(resource, columns),

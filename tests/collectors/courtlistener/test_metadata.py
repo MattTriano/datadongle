@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datadongle.collectors.courtlistener.metadata import CourtListenerMetadata
 
-from .helpers import BULK_EXPORTS, BULK_HEADER, FakeCourtListenerClient
+from .helpers import BULK_EXPORTS, BULK_HEADER, FakeCourtListenerClient, make_bulk_bz2
 
 
 def _metadata(**client_kwargs) -> CourtListenerMetadata:
@@ -135,6 +135,30 @@ def test_coverage_lists_bulk_only_tables():
     row = _mixed().coverage().set_index("name").loc["citation-map"]
     assert row["bulk"]
     assert not row["api"]
+
+
+def test_suggest_profile_finds_a_renamed_export_by_its_endpoint_name():
+    """`clusters` has no same-named file; the lookup must go via the registry."""
+    url = "https://example.invalid/opinion-clusters-2024-02-29.csv.bz2"
+    exports = [
+        {
+            "prefix": "opinion-clusters",
+            "date": "2024-02-29",
+            "filename": "f",
+            "url": url,
+            "size": 1,
+        }
+    ]
+    columns = ["id", "date_created", "date_modified", "case_name"]
+    meta = _metadata(
+        exports=exports,
+        bulk_files={url: make_bulk_bz2([dict.fromkeys(columns, "x")], columns=columns)},
+    )
+
+    suggestion = meta.suggest_profile("clusters")
+
+    assert suggestion.profile.entity_key == ["id"]
+    assert suggestion.spec_kwargs()["bulk_file_prefix"] == "opinion-clusters"
 
 
 def test_coverage_does_not_double_count_a_renamed_export():
