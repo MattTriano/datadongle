@@ -9,6 +9,7 @@ from datadongle.collectors.courtlistener.resources import (
     ProfileSuggestion,
     api_endpoint_for,
     bulk_prefix_for,
+    canonical_name,
     looks_like_link_table,
     profile_from_columns,
     registry_lookup,
@@ -126,6 +127,32 @@ def test_the_two_namespaces_resolve_independently():
     """A rename in one direction must not leak into the other."""
     assert bulk_prefix_for("citation-map") == "citation-map"
     assert api_endpoint_for("clusters") == "clusters"
+
+
+@pytest.mark.parametrize(
+    ("name", "canonical"),
+    [
+        ("citation-map", "citation-map"),
+        ("opinions-cited", "citation-map"),
+        ("clusters", "clusters"),
+        ("opinion-clusters", "clusters"),
+        ("dockets", "dockets"),
+    ],
+)
+def test_canonical_name_normalizes_every_alias(name, canonical):
+    assert canonical_name(name) == canonical
+
+
+@pytest.mark.parametrize(
+    "alias", ["citation-map", "opinions-cited", "clusters", "opinion-clusters", "dockets"]
+)
+def test_every_alias_resolves_to_the_same_pair_of_names(alias):
+    """The whole point: which name you happen to hold cannot change the answer."""
+    canonical = canonical_name(alias)
+
+    assert bulk_prefix_for(alias) == bulk_prefix_for(canonical)
+    assert api_endpoint_for(alias) == api_endpoint_for(canonical)
+    assert registry_lookup(alias) is registry_lookup(canonical)
 
 
 def test_profile_lookup_by_bulk_prefix_matches_lookup_by_endpoint():

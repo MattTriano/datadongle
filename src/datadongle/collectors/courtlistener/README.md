@@ -150,17 +150,29 @@ The API root lists ~48 endpoints, but a good third of them are per-user state or
 
 **The two namespaces don't line up by name, in either direction.** `bulk_exports("clusters")` returns nothing because that table is published as `opinion-clusters`; `bulk_exports("agreements")` returns nothing because it's published under a `financial-disclosure-` qualifier. Going the other way, `describe("citation-map")` 404s because the API serves that table as `opinions-cited`. The bulk filter is a literal S3 key prefix, so an empty result means *"no file is named that"*, never *"this data isn't published in bulk."*
 
-### Which name goes where
+### Which name goes where: any of them
 
-| You have | Use it with | Notes |
-|---|---|---|
-| API endpoint (`endpoints()`) | `describe`, `columns` | Hits the REST API |
-| Bulk prefix (`bulk_datasets()`) | `bulk_exports`, `bulk_columns` | Hits the S3 bucket |
-| Either | `suggest_profile`, `describe`, and a spec's `resource` | Resolved through `resources.py` |
+**Every metadata method and a spec's `resource` accept any of a table's names** — canonical, API endpoint, or bulk prefix. Each resolves through `resources.py` to the namespace it needs, so which name you happen to have met first can't change the answer:
 
-A spec's `resource` accepts **either** name — `spec.endpoint` and `spec.file_prefix` each resolve through the registry independently, so `resource="citation-map"` reads the `citation-map` bulk file and pages the `opinions-cited` endpoint. Name it once. Explicit `api_endpoint` / `bulk_file_prefix` still override.
+```python
+m.describe("citation-map")       # → OPTIONS on opinions-cited
+m.describe("opinions-cited")     # → same
+m.bulk_columns("clusters")       # → header of the opinion-clusters export
+m.bulk_columns("opinion-clusters")   # → same
+m.suggest_profile("opinions-cited")  # → reports resource='citation-map'
+```
 
-When a name has no endpoint behind it, `describe` raises with the nearest matches rather than a bare 404 — plenty of bulk tables genuinely have no API endpoint, and that's a fact about the source, not a typo.
+`suggest_profile` reports the **canonical** name, which is what belongs in a spec. And a spec resolves both directions independently:
+
+```python
+spec = CourtListenerDatasetSpec(resource="citation-map", ...)
+spec.file_prefix   # 'citation-map'    → the bulk file
+spec.endpoint      # 'opinions-cited'  → the API endpoint
+```
+
+Name it once. Explicit `api_endpoint` / `bulk_file_prefix` still override, and unregistered names pass through unchanged — which is right for the majority of resources, whose two names simply agree.
+
+When a name has nothing behind it in the namespace you asked for, the error says so and suggests the nearest matches rather than surfacing a bare 404 or an empty result. Plenty of bulk tables have no API endpoint and plenty of endpoints have no bulk export; both are facts about the source, not typos.
 
 `coverage()` reconciles the two and suggests likely renames:
 

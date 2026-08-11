@@ -199,28 +199,65 @@ def test_describe_does_not_swallow_other_http_errors(monkeypatch):
         meta.describe("dockets")
 
 
-def test_suggest_profile_finds_a_renamed_export_by_its_endpoint_name():
-    """`clusters` has no same-named file; the lookup must go via the registry."""
-    url = "https://example.invalid/opinion-clusters-2024-02-29.csv.bz2"
+CLUSTER_URL = "https://example.invalid/opinion-clusters-2024-02-29.csv.bz2"
+CLUSTER_COLUMNS = ["id", "date_created", "date_modified", "case_name"]
+
+
+def _clusters_meta() -> CourtListenerMetadata:
     exports = [
         {
             "prefix": "opinion-clusters",
             "date": "2024-02-29",
             "filename": "f",
-            "url": url,
+            "url": CLUSTER_URL,
             "size": 1,
         }
     ]
-    columns = ["id", "date_created", "date_modified", "case_name"]
-    meta = _metadata(
+    rows = [dict.fromkeys(CLUSTER_COLUMNS, "x")]
+    return _metadata(
         exports=exports,
-        bulk_files={url: make_bulk_bz2([dict.fromkeys(columns, "x")], columns=columns)},
+        bulk_files={CLUSTER_URL: make_bulk_bz2(rows, columns=CLUSTER_COLUMNS)},
     )
 
-    suggestion = meta.suggest_profile("clusters")
 
+@pytest.mark.parametrize("alias", ["clusters", "opinion-clusters"])
+def test_bulk_lookups_accept_any_of_a_tables_names(alias):
+    """`clusters` has no same-named file; the lookup must go via the registry."""
+    meta = _clusters_meta()
+
+    assert meta.bulk_columns(alias) == CLUSTER_COLUMNS
+    assert list(meta.bulk_exports(alias)["prefix"]) == ["opinion-clusters"]
+
+
+@pytest.mark.parametrize("alias", ["clusters", "opinion-clusters"])
+def test_suggest_profile_reports_the_canonical_name_whichever_alias_is_given(alias):
+    suggestion = _clusters_meta().suggest_profile(alias)
+
+    assert suggestion.resource == "clusters"  # what belongs in a spec
     assert suggestion.profile.entity_key == ["id"]
     assert suggestion.spec_kwargs()["bulk_file_prefix"] == "opinion-clusters"
+
+
+def test_bulk_exports_with_no_argument_still_lists_everything():
+    assert len(_mixed().bulk_exports()) == len(MIXED_EXPORTS)
+
+
+def test_missing_export_names_the_resolved_prefix_and_suggests_neighbours():
+    meta = _mixed()
+
+    with pytest.raises(ValueError) as exc:
+        meta.bulk_columns("agreements")
+
+    message = str(exc.value)
+    assert "No bulk export found for 'agreements'" in message
+    assert "financial-disclosure-agreements" in message  # the likely real name
+
+
+def test_missing_export_points_at_coverage_when_nothing_is_close():
+    meta = _mixed()
+
+    with pytest.raises(ValueError, match="m.coverage\\(\\)"):
+        meta.bulk_columns("alerts")
 
 
 def test_coverage_does_not_double_count_a_renamed_export():

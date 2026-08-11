@@ -45,6 +45,7 @@ from datadongle.collectors.courtlistener.resources import (
     ProfileSuggestion,
     api_endpoint_for,
     bulk_prefix_for,
+    canonical_name,
     profile_from_columns,
 )
 
@@ -169,13 +170,14 @@ class CourtListenerMetadata:
         Columns: ``prefix``, ``date``, ``filename``, ``size``, ``url``.
         ``resource`` filters to one table's files; ``None`` lists everything.
 
-        The filter is a **literal key prefix**, so it only matches files whose
-        name starts with ``resource``. An empty result means "no file is named
-        that", not "this data isn't published in bulk" — the bulk prefix often
-        differs from the API endpoint name (``clusters`` is exported as
-        ``opinion-clusters``). Use :meth:`bulk_datasets` for the real list.
+        ``resource`` may be any of a table's names — canonical, API endpoint,
+        or bulk prefix — and is resolved through ``resources.py`` before the
+        lookup. Beyond the renames it knows, the filter is a **literal key
+        prefix**: an empty result means "no file is named that", not "this data
+        isn't published in bulk". Use :meth:`bulk_datasets` for the real list
+        and :meth:`coverage` to find an unregistered rename.
         """
-        exports = self.client.list_bulk_exports(resource)
+        exports = self.client.list_bulk_exports(bulk_prefix_for(resource) if resource else None)
         return pd.DataFrame(exports, columns=["prefix", "date", "filename", "size", "url"])
 
     def bulk_datasets(self) -> pd.DataFrame:
@@ -271,14 +273,38 @@ class CourtListenerMetadata:
         ).sort_values("name", ignore_index=True)
 
     def bulk_columns(self, resource: str, date: str | None = None) -> list[str]:
-        """A bulk export's column names (a cheap streamed header peek)."""
-        exports = self.client.list_bulk_exports(resource)
+        """A bulk export's column names (a cheap streamed header peek).
+
+        ``resource`` may be any of a table's names; it is resolved through
+        ``resources.py`` first.
+        """
+        prefix = bulk_prefix_for(resource)
+        exports = self.client.list_bulk_exports(prefix)
         if date is not None:
             exports = [e for e in exports if e["date"] == date]
         if not exports:
-            raise ValueError(f"No bulk export found for {resource!r}.")
+            raise ValueError(self._no_export_message(resource, prefix, date))
         latest = max(exports, key=lambda e: e["date"])
         return self.client.read_bulk_header(latest["url"])
+
+    def _no_export_message(self, resource: str, prefix: str, date: str | None) -> str:
+        via = "" if prefix == resource else f" (resolved to {prefix!r})"
+        message = f"No bulk export found for {resource!r}{via}"
+        if date is not None:
+            return message + f" dated {date}."
+
+        try:
+            published = set(self.bulk_datasets()["prefix"])
+        except Exception:  # noqa: BLE001 - the missing export is the story
+            return message + "."
+
+        near = sorted(p for p in published if resource in p or p in resource)
+        if near:
+            return message + f". Published under a different name? Closest: {', '.join(near)}."
+        return message + (
+            ". Not every API endpoint has a bulk export — m.coverage() shows "
+            "which resources are API-only."
+        )
 
     # ------------------------------------------------------------------
     # Spec suggestions
@@ -292,18 +318,19 @@ class CourtListenerMetadata:
         resources datadongle has never seen. The result carries a rationale;
         review it before pasting into a spec.
 
-        Accepts either name: an API endpoint (``clusters``) or a bulk prefix
-        (``opinion-clusters``). The bucket lookup goes through the rename
-        registry, so ``clusters`` doesn't fail for want of a same-named file.
+        Accepts any of a table's names — canonical, API endpoint, or bulk
+        prefix — and reports the canonical one, which is what belongs in a
+        spec's ``resource``.
 
             >>> m.suggest_profile("dockets")            # doctest: +SKIP
             dockets: entity_key=['id'], cursor_column='date_modified'
               Entity table: 'id' is the upstream primary key.
         """
-        columns = self.bulk_columns(bulk_prefix_for(resource))
+        name = canonical_name(resource)
+        columns = self.bulk_columns(name)
         return ProfileSuggestion(
-            resource=resource,
-            profile=profile_from_columns(resource, columns),
+            resource=name,
+            profile=profile_from_columns(name, columns),
             columns=columns,
         )
 

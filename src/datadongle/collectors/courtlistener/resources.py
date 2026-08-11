@@ -114,48 +114,60 @@ def looks_like_link_table(columns: list[str]) -> bool:
     return len(fks) == 2 and len(columns) == 3
 
 
+def canonical_name(resource: str) -> str:
+    """The registry key for ``resource``, whichever of its names was given.
+
+    The single normalization point: every name resolution goes through here, so
+    a table answers to its canonical name, its API endpoint, and its bulk
+    prefix identically. An unregistered name is returned unchanged, which is
+    correct for the majority of resources whose names simply agree.
+    """
+    if resource in RESOURCES:
+        return resource
+    for key, profile in RESOURCES.items():
+        if resource in (profile.bulk_file_prefix, profile.api_endpoint):
+            return key
+    return resource
+
+
 def registry_lookup(resource: str) -> ResourceProfile | None:
     """The registry entry for ``resource``, under any of its names.
 
     Callers legitimately hold whichever name they met first: ``endpoints()``
     yields API names, ``bulk_datasets()`` yields bulk prefixes, specs carry the
-    canonical one. Resolving all three keeps ``clusters``,
-    ``opinion-clusters``, ``citation-map`` and ``opinions-cited`` from
-    producing different answers for the same table.
+    canonical one.
     """
-    if resource in RESOURCES:
-        return RESOURCES[resource]
-    for profile in RESOURCES.values():
-        if resource in (profile.bulk_file_prefix, profile.api_endpoint):
-            return profile
-    return None
+    return RESOURCES.get(canonical_name(resource))
 
 
 def bulk_prefix_for(resource: str) -> str:
-    """The bulk-file prefix for ``resource``.
+    """The bulk-file prefix for ``resource``, given any of its names.
 
     The API and bulk names are separate namespaces — ``clusters`` is published
-    as ``opinion-clusters`` — so anything turning a resource name into a bucket
-    lookup has to come through here, or it asks S3 for a file that doesn't
-    exist and concludes the data isn't published.
+    as ``opinion-clusters``, and ``opinions-cited`` as ``citation-map`` — so
+    anything turning a resource name into a bucket lookup has to come through
+    here, or it asks S3 for a file that doesn't exist and concludes the data
+    isn't published.
     """
-    profile = RESOURCES.get(resource)
+    key = canonical_name(resource)
+    profile = RESOURCES.get(key)
     if profile is not None and profile.bulk_file_prefix:
         return profile.bulk_file_prefix
-    return resource
+    return key
 
 
 def api_endpoint_for(resource: str) -> str:
-    """The API endpoint name for ``resource``.
+    """The API endpoint name for ``resource``, given any of its names.
 
     The mirror of :func:`bulk_prefix_for`: the citation map is published as the
-    bulk file ``citation-map`` but served by the API endpoint
-    ``opinions-cited``, so a request built from the bulk name 404s.
+    bulk file ``citation-map`` but served by the endpoint ``opinions-cited``,
+    so a request built from the bulk name 404s.
     """
-    profile = RESOURCES.get(resource)
+    key = canonical_name(resource)
+    profile = RESOURCES.get(key)
     if profile is not None and profile.api_endpoint:
         return profile.api_endpoint
-    return resource
+    return key
 
 
 def profile_from_columns(resource: str, columns: list[str]) -> ResourceProfile:
