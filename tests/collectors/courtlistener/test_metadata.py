@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+import requests
+
 from datadongle.collectors.courtlistener.metadata import CourtListenerMetadata
 
 from .helpers import BULK_EXPORTS, BULK_HEADER, FakeCourtListenerClient, make_bulk_bz2
@@ -135,6 +138,65 @@ def test_coverage_lists_bulk_only_tables():
     row = _mixed().coverage().set_index("name").loc["citation-map"]
     assert row["bulk"]
     assert not row["api"]
+
+
+def _http_error(status: int) -> requests.HTTPError:
+    response = requests.Response()
+    response.status_code = status
+    return requests.HTTPError(f"{status} error", response=response)
+
+
+def _options_raising(monkeypatch, meta, status: int) -> None:
+    """Make every OPTIONS request fail with ``status``."""
+
+    def fail(endpoint):
+        raise _http_error(status)
+
+    monkeypatch.setattr(meta.client, "options", fail)
+
+
+def test_describe_resolves_a_bulk_name_to_its_api_endpoint(monkeypatch):
+    """`describe("citation-map")` must reach `opinions-cited`, not 404."""
+    meta = _mixed()
+    seen = []
+
+    def record(endpoint):
+        seen.append(endpoint)
+        return {"name": "Cited"}
+
+    monkeypatch.setattr(meta.client, "options", record)
+
+    assert meta.describe("citation-map") == {"name": "Cited"}
+    assert seen == ["opinions-cited"]
+
+
+def test_describe_explains_a_404_instead_of_surfacing_it(monkeypatch):
+    meta = _mixed()
+    _options_raising(monkeypatch, meta, 404)
+
+    with pytest.raises(ValueError) as exc:
+        meta.describe("agreements")
+
+    message = str(exc.value)
+    assert "no API endpoint 'agreements'" in message
+    assert "m.coverage()" in message  # points at the tool that explains why
+
+
+def test_describe_names_the_resolved_endpoint_when_it_differs(monkeypatch):
+    meta = _mixed()
+    _options_raising(monkeypatch, meta, 404)
+
+    with pytest.raises(ValueError, match="resolved to 'opinions-cited'"):
+        meta.describe("citation-map")
+
+
+def test_describe_does_not_swallow_other_http_errors(monkeypatch):
+    """A 500 is a server problem, not a naming problem — let it through."""
+    meta = _mixed()
+    _options_raising(monkeypatch, meta, 500)
+
+    with pytest.raises(requests.HTTPError):
+        meta.describe("dockets")
 
 
 def test_suggest_profile_finds_a_renamed_export_by_its_endpoint_name():

@@ -7,6 +7,7 @@ import pytest
 from datadongle.collectors.courtlistener.resources import (
     RESOURCES,
     ProfileSuggestion,
+    api_endpoint_for,
     bulk_prefix_for,
     looks_like_link_table,
     profile_from_columns,
@@ -107,7 +108,24 @@ def test_registry_resolves_from_either_namespace():
     """Callers hold an endpoint name or a bulk prefix; both must find the entry."""
     assert registry_lookup("clusters") is RESOURCES["clusters"]
     assert registry_lookup("opinion-clusters") is RESOURCES["clusters"]
+    assert registry_lookup("citation-map") is RESOURCES["citation-map"]
+    assert registry_lookup("opinions-cited") is RESOURCES["citation-map"]
     assert registry_lookup("dockets") is None
+
+
+def test_api_endpoint_maps_a_bulk_name_to_its_endpoint():
+    """citation-map is the bulk file; opinions-cited serves it over the API."""
+    assert api_endpoint_for("citation-map") == "opinions-cited"
+
+
+def test_api_endpoint_passes_through_unregistered_names():
+    assert api_endpoint_for("dockets") == "dockets"
+
+
+def test_the_two_namespaces_resolve_independently():
+    """A rename in one direction must not leak into the other."""
+    assert bulk_prefix_for("citation-map") == "citation-map"
+    assert api_endpoint_for("clusters") == "clusters"
 
 
 def test_profile_lookup_by_bulk_prefix_matches_lookup_by_endpoint():

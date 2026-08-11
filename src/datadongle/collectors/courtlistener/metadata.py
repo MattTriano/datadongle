@@ -37,11 +37,13 @@ the two.
 from __future__ import annotations
 
 import pandas as pd
+import requests
 
 from datadongle.collectors.courtlistener.client import CourtListenerClient
 from datadongle.collectors.courtlistener.resources import (
     RESOURCES,
     ProfileSuggestion,
+    api_endpoint_for,
     bulk_prefix_for,
     profile_from_columns,
 )
@@ -87,8 +89,42 @@ class CourtListenerMetadata:
         return df[df["name"].str.contains(text, case=False)].reset_index(drop=True)
 
     def describe(self, resource: str) -> dict:
-        """One endpoint's OPTIONS metadata (its ``name``/``description``, etc.)."""
-        return self.client.options(resource)
+        """One endpoint's OPTIONS metadata (its ``name``/``description``, etc.).
+
+        Takes either name: an API endpoint, or a bulk prefix the registry can
+        map to one. A name with no endpoint behind it raises with the nearest
+        matches rather than a bare 404 — plenty of bulk tables have no API
+        endpoint at all, and that's a fact about the source, not a typo.
+        """
+        return self._options(resource)
+
+    def _options(self, resource: str) -> dict:
+        """OPTIONS for ``resource``, resolving its API name and explaining 404s."""
+        endpoint = api_endpoint_for(resource)
+        try:
+            return self.client.options(endpoint)
+        except requests.HTTPError as exc:
+            if exc.response is None or exc.response.status_code != 404:
+                raise
+            raise ValueError(self._no_endpoint_message(resource, endpoint)) from exc
+
+    def _no_endpoint_message(self, resource: str, endpoint: str) -> str:
+        via = "" if endpoint == resource else f" (resolved to {endpoint!r})"
+        message = f"CourtListener has no API endpoint {resource!r}{via}."
+
+        try:
+            names = set(self.endpoints()["name"])
+        except Exception:  # noqa: BLE001 - the 404 is the story, not this lookup
+            return message
+
+        near = sorted(n for n in names if resource in n or n in resource)
+        if near:
+            message += f" Closest endpoints: {', '.join(near)}."
+        return message + (
+            " Many bulk tables have no API endpoint — check m.coverage() to see "
+            "which resources are bulk-only, and use m.bulk_columns() for their "
+            "fields."
+        )
 
     def columns(self, resource: str) -> pd.DataFrame:
         """Field names for one endpoint, with types where the server tells us.
@@ -97,7 +133,7 @@ class CourtListenerMetadata:
         (read-only endpoints may not), falls back to sampling one row and
         reporting the JSON types observed.
         """
-        meta = self.client.options(resource)
+        meta = self._options(resource)
         fields = self._options_fields(meta)
         if fields:
             rows = [
@@ -111,7 +147,7 @@ class CourtListenerMetadata:
             ]
             return pd.DataFrame(rows)
 
-        page = self.client.get_page(resource)
+        page = self.client.get_page(api_endpoint_for(resource))
         results = page.get("results") or []
         if not results:
             return pd.DataFrame(columns=["name", "type", "required", "help_text"])
@@ -190,12 +226,15 @@ class CourtListenerMetadata:
         datasets = self.bulk_datasets()
         prefixes = set(datasets["prefix"]) if not datasets.empty else set()
 
-        # Endpoint -> bulk prefix, for the mismatches this collector knows.
-        known = {
-            name: profile.bulk_file_prefix
-            for name, profile in RESOURCES.items()
-            if profile.bulk_file_prefix
-        }
+        # API endpoint -> bulk prefix, for the renames this collector knows.
+        # Registry keys are canonical names, which may be either namespace, so
+        # both directions are indexed.
+        known = {}
+        for name, profile in RESOURCES.items():
+            endpoint = profile.api_endpoint or name
+            prefix = profile.bulk_file_prefix or name
+            if endpoint != prefix:
+                known[endpoint] = prefix
 
         rows = []
         matched: set[str] = set()

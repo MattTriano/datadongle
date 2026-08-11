@@ -72,6 +72,19 @@ def test_unregistered_resource_uses_its_own_name_for_both():
     assert spec.endpoint == spec.file_prefix == "dockets"
 
 
+def test_a_bulk_named_resource_resolves_its_api_endpoint():
+    """citation-map is the bulk file; the API serves it as opinions-cited."""
+    spec = make_spec(resource="citation-map")
+
+    assert spec.file_prefix == "citation-map"
+    assert spec.endpoint == "opinions-cited"
+
+
+def test_explicit_api_endpoint_still_wins_over_the_registry():
+    spec = make_spec(resource="citation-map", api_endpoint="something-else")
+    assert spec.endpoint == "something-else"
+
+
 def test_dataset_id_includes_sorted_filters():
     assert make_spec().dataset_id == "dockets"
     spec = make_spec(backfill="api", filters={"court": "scotus", "blocked": "false"})

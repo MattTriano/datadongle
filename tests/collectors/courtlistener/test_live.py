@@ -113,6 +113,22 @@ def test_bulk_data_rows_parse_without_residual_quotes(client, tmp_path):
 
 
 @pytest.mark.parametrize("resource", sorted(RESOURCES))
+def test_registry_api_endpoint_exists(client, resource):
+    """A recorded api_endpoint must actually be in the API root.
+
+    `citation-map` -> `opinions-cited` was inferred from the endpoint listing,
+    not confirmed; this is what confirms it. A failure means the mapping is
+    wrong, and `spec.endpoint` would 404 on incremental reads.
+    """
+    endpoint = RESOURCES[resource].api_endpoint
+    if endpoint is None:
+        pytest.skip(f"{resource} records no api_endpoint override")
+    assert endpoint in client.api_root(), (
+        f"{resource} maps to API endpoint {endpoint!r}, which the API root does not list"
+    )
+
+
+@pytest.mark.parametrize("resource", sorted(RESOURCES))
 def test_registry_entry_matches_the_live_columns(client, resource):
     profile = RESOURCES[resource]
     prefix = profile.bulk_file_prefix or resource

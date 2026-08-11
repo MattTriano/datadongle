@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from datadongle.collectors.base_spec import DatasetSpec
-from datadongle.collectors.courtlistener.resources import bulk_prefix_for
+from datadongle.collectors.courtlistener.resources import api_endpoint_for, bulk_prefix_for
 
 _BULK_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -122,8 +122,14 @@ class CourtListenerDatasetSpec(DatasetSpec):
 
     @property
     def endpoint(self) -> str:
-        """The API endpoint name (``api_endpoint`` override, else ``resource``)."""
-        return (self.api_endpoint or self.resource).strip("/")
+        """The API endpoint name for this resource.
+
+        An explicit ``api_endpoint`` wins; otherwise the rename registry in
+        ``resources.py`` is consulted, so ``resource="citation-map"`` reaches
+        the ``opinions-cited`` endpoint rather than 404ing on its bulk name.
+        Falls back to ``resource`` when the two names agree.
+        """
+        return (self.api_endpoint or api_endpoint_for(self.resource)).strip("/")
 
     @property
     def file_prefix(self) -> str:

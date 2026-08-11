@@ -148,7 +148,19 @@ m.suggest_profiles()          # the same for every resource, as a DataFrame
 
 The API root lists ~48 endpoints, but a good third of them are per-user state or RPC-style operations with no table behind them — `alerts`, `docket-alerts`, `tag`/`tags`, `api-usage`, `memberships`, `prayers`, `citation-lookup`, `search`, `visualizations`, and the `recap-*` family. Those are API-only by nature, not gaps in the bulk coverage.
 
-**The two namespaces don't line up by name.** `bulk_exports("clusters")` returns nothing because that table is published as `opinion-clusters`; `bulk_exports("agreements")` returns nothing because it's published under a `financial-disclosure-` qualifier. The filter is a literal S3 key prefix, so an empty result means *"no file is named that"*, never *"this data isn't published in bulk."*
+**The two namespaces don't line up by name, in either direction.** `bulk_exports("clusters")` returns nothing because that table is published as `opinion-clusters`; `bulk_exports("agreements")` returns nothing because it's published under a `financial-disclosure-` qualifier. Going the other way, `describe("citation-map")` 404s because the API serves that table as `opinions-cited`. The bulk filter is a literal S3 key prefix, so an empty result means *"no file is named that"*, never *"this data isn't published in bulk."*
+
+### Which name goes where
+
+| You have | Use it with | Notes |
+|---|---|---|
+| API endpoint (`endpoints()`) | `describe`, `columns` | Hits the REST API |
+| Bulk prefix (`bulk_datasets()`) | `bulk_exports`, `bulk_columns` | Hits the S3 bucket |
+| Either | `suggest_profile`, `describe`, and a spec's `resource` | Resolved through `resources.py` |
+
+A spec's `resource` accepts **either** name — `spec.endpoint` and `spec.file_prefix` each resolve through the registry independently, so `resource="citation-map"` reads the `citation-map` bulk file and pages the `opinions-cited` endpoint. Name it once. Explicit `api_endpoint` / `bulk_file_prefix` still override.
+
+When a name has no endpoint behind it, `describe` raises with the nearest matches rather than a bare 404 — plenty of bulk tables genuinely have no API endpoint, and that's a fact about the source, not a typo.
 
 `coverage()` reconciles the two and suggests likely renames:
 

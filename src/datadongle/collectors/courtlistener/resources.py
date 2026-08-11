@@ -66,6 +66,10 @@ class ResourceProfile:
 # endpoint and bulk-file prefix differ. Everything absent from this registry is
 # handled correctly by profile_from_columns, so keep it small.
 #
+# The **key is the canonical name** — what goes in a spec's ``resource``.
+# ``api_endpoint`` and ``bulk_file_prefix`` record the other namespace's name
+# where it differs from the key; ``None`` means "same as the key".
+#
 # Compiled without network access; `tests/collectors/courtlistener/test_live.py`
 # checks every entry against the live source.
 RESOURCES: dict[str, ResourceProfile] = {
@@ -73,14 +77,16 @@ RESOURCES: dict[str, ResourceProfile] = {
         entity_key=["id"],
         cursor_column=CURSOR_COLUMN,
         bulk_file_prefix="opinion-clusters",
-        rationale="The API endpoint is 'clusters'; the bulk file is 'opinion-clusters'.",
+        rationale="API endpoint 'clusters'; bulk file 'opinion-clusters'.",
     ),
     "citation-map": ResourceProfile(
         entity_key=["citing_opinion_id", "cited_opinion_id"],
         cursor_column=None,
+        api_endpoint="opinions-cited",
         rationale=(
-            "The opinions-cited through table. Its 'depth' payload column keeps it "
-            "from matching the pure link-table shape, but the citing/cited pair is "
+            "The opinions-cited through table: bulk file 'citation-map', API "
+            "endpoint 'opinions-cited'. Its 'depth' payload column keeps it from "
+            "matching the pure link-table shape, but the citing/cited pair is "
             "still the identity — the surrogate id is a dump artifact."
         ),
     ),
@@ -109,17 +115,18 @@ def looks_like_link_table(columns: list[str]) -> bool:
 
 
 def registry_lookup(resource: str) -> ResourceProfile | None:
-    """The registry entry for ``resource``, by API endpoint *or* bulk prefix.
+    """The registry entry for ``resource``, under any of its names.
 
-    The registry is keyed by API endpoint name, but callers legitimately hold
-    either name — ``bulk_datasets()`` yields bulk prefixes, specs carry
-    endpoints. Looking up both ways keeps ``clusters`` and
-    ``opinion-clusters`` from resolving differently.
+    Callers legitimately hold whichever name they met first: ``endpoints()``
+    yields API names, ``bulk_datasets()`` yields bulk prefixes, specs carry the
+    canonical one. Resolving all three keeps ``clusters``,
+    ``opinion-clusters``, ``citation-map`` and ``opinions-cited`` from
+    producing different answers for the same table.
     """
     if resource in RESOURCES:
         return RESOURCES[resource]
     for profile in RESOURCES.values():
-        if profile.bulk_file_prefix == resource:
+        if resource in (profile.bulk_file_prefix, profile.api_endpoint):
             return profile
     return None
 
@@ -127,14 +134,27 @@ def registry_lookup(resource: str) -> ResourceProfile | None:
 def bulk_prefix_for(resource: str) -> str:
     """The bulk-file prefix for ``resource``.
 
-    The API endpoint name and the bulk filename are separate namespaces —
-    ``clusters`` is published as ``opinion-clusters`` — so anything that turns
-    a resource name into a bucket lookup has to go through here, or it asks S3
-    for a file that doesn't exist and concludes the data isn't published.
+    The API and bulk names are separate namespaces — ``clusters`` is published
+    as ``opinion-clusters`` — so anything turning a resource name into a bucket
+    lookup has to come through here, or it asks S3 for a file that doesn't
+    exist and concludes the data isn't published.
     """
     profile = RESOURCES.get(resource)
     if profile is not None and profile.bulk_file_prefix:
         return profile.bulk_file_prefix
+    return resource
+
+
+def api_endpoint_for(resource: str) -> str:
+    """The API endpoint name for ``resource``.
+
+    The mirror of :func:`bulk_prefix_for`: the citation map is published as the
+    bulk file ``citation-map`` but served by the API endpoint
+    ``opinions-cited``, so a request built from the bulk name 404s.
+    """
+    profile = RESOURCES.get(resource)
+    if profile is not None and profile.api_endpoint:
+        return profile.api_endpoint
     return resource
 
 
