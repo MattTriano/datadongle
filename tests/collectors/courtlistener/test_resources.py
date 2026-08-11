@@ -1,0 +1,215 @@
+"""Deriving entity keys and cursors from a CourtListener resource's columns."""
+
+from __future__ import annotations
+
+import pytest
+
+from datadongle.collectors.courtlistener.resources import (
+    RESOURCES,
+    ProfileSuggestion,
+    api_endpoint_for,
+    bulk_prefix_for,
+    canonical_name,
+    looks_like_link_table,
+    profile_from_columns,
+    registry_lookup,
+)
+
+# A dockets-shaped entity table.
+ENTITY_COLUMNS = ["id", "date_created", "date_modified", "court_id", "case_name"]
+
+# search_opinioncluster_panel: Django's auto-generated through table.
+LINK_COLUMNS = ["id", "opinioncluster_id", "person_id"]
+
+
+# --------------------------------------------------------------- entity tables
+
+
+def test_entity_table_keys_on_the_upstream_primary_key():
+    profile = profile_from_columns("dockets", ENTITY_COLUMNS)
+
+    assert profile.entity_key == ["id"]
+    assert profile.cursor_column == "date_modified"
+    assert profile.is_incremental
+
+
+def test_entity_table_holding_foreign_keys_still_keys_on_id():
+    """Foreign keys don't make it a link table — it has its own payload."""
+    profile = profile_from_columns("opinions", ENTITY_COLUMNS)
+    assert profile.entity_key == ["id"]
+
+
+def test_reference_table_without_timestamps_keys_on_id_but_has_no_cursor():
+    profile = profile_from_columns("people-db-races", ["id", "race"])
+
+    assert profile.entity_key == ["id"]
+    assert profile.cursor_column is None
+    assert not profile.is_incremental
+    assert "No date_modified" in profile.rationale
+
+
+# ----------------------------------------------------------------- link tables
+
+
+def test_link_table_keys_on_its_foreign_key_pair_not_the_surrogate():
+    """Keying on `id` would re-version the whole table if upstream renumbers."""
+    profile = profile_from_columns("search_opinioncluster_panel", LINK_COLUMNS)
+
+    assert profile.entity_key == ["opinioncluster_id", "person_id"]
+    assert profile.cursor_column is None
+    assert "renumber" in profile.rationale
+
+
+@pytest.mark.parametrize(
+    ("columns", "expected"),
+    [
+        (LINK_COLUMNS, True),
+        # A payload column means it carries its own data, not just an edge.
+        (["id", "citing_opinion_id", "cited_opinion_id", "depth"], False),
+        # Timestamps mean it has history of its own.
+        (["id", "a_id", "b_id", "date_modified"], False),
+        # One foreign key is an entity table with a parent.
+        (["id", "docket_id"], False),
+        # Three is not a pair.
+        (["id", "a_id", "b_id", "c_id"], False),
+        # No surrogate at all.
+        (["a_id", "b_id"], False),
+    ],
+)
+def test_link_table_shape_is_recognised_narrowly(columns, expected):
+    assert looks_like_link_table(columns) is expected
+
+
+# -------------------------------------------------------------------- registry
+
+
+def test_registry_entry_wins_over_shape_derivation():
+    """citation-map has a payload column, so only the registry knows its key."""
+    columns = ["id", "citing_opinion_id", "cited_opinion_id", "depth"]
+    profile = profile_from_columns("citation-map", columns)
+
+    assert profile.entity_key == ["citing_opinion_id", "cited_opinion_id"]
+    assert profile.cursor_column is None
+
+
+def test_clusters_records_the_endpoint_prefix_mismatch():
+    assert RESOURCES["clusters"].bulk_file_prefix == "opinion-clusters"
+    assert RESOURCES["clusters"].entity_key == ["id"]
+
+
+def test_bulk_prefix_maps_an_endpoint_to_its_export_name():
+    assert bulk_prefix_for("clusters") == "opinion-clusters"
+
+
+def test_bulk_prefix_passes_through_unregistered_names():
+    assert bulk_prefix_for("dockets") == "dockets"
+
+
+def test_registry_resolves_from_either_namespace():
+    """Callers hold an endpoint name or a bulk prefix; both must find the entry."""
+    assert registry_lookup("clusters") is RESOURCES["clusters"]
+    assert registry_lookup("opinion-clusters") is RESOURCES["clusters"]
+    assert registry_lookup("citation-map") is RESOURCES["citation-map"]
+    assert registry_lookup("opinions-cited") is RESOURCES["citation-map"]
+    assert registry_lookup("dockets") is None
+
+
+def test_api_endpoint_maps_a_bulk_name_to_its_endpoint():
+    """citation-map is the bulk file; opinions-cited serves it over the API."""
+    assert api_endpoint_for("citation-map") == "opinions-cited"
+
+
+def test_api_endpoint_passes_through_unregistered_names():
+    assert api_endpoint_for("dockets") == "dockets"
+
+
+def test_the_two_namespaces_resolve_independently():
+    """A rename in one direction must not leak into the other."""
+    assert bulk_prefix_for("citation-map") == "citation-map"
+    assert api_endpoint_for("clusters") == "clusters"
+
+
+@pytest.mark.parametrize(
+    ("name", "canonical"),
+    [
+        ("citation-map", "citation-map"),
+        ("opinions-cited", "citation-map"),
+        ("clusters", "clusters"),
+        ("opinion-clusters", "clusters"),
+        ("dockets", "dockets"),
+    ],
+)
+def test_canonical_name_normalizes_every_alias(name, canonical):
+    assert canonical_name(name) == canonical
+
+
+@pytest.mark.parametrize(
+    "alias", ["citation-map", "opinions-cited", "clusters", "opinion-clusters", "dockets"]
+)
+def test_every_alias_resolves_to_the_same_pair_of_names(alias):
+    """The whole point: which name you happen to hold cannot change the answer."""
+    canonical = canonical_name(alias)
+
+    assert bulk_prefix_for(alias) == bulk_prefix_for(canonical)
+    assert api_endpoint_for(alias) == api_endpoint_for(canonical)
+    assert registry_lookup(alias) is registry_lookup(canonical)
+
+
+def test_profile_lookup_by_bulk_prefix_matches_lookup_by_endpoint():
+    columns = ["id", "date_created", "date_modified", "case_name"]
+    assert profile_from_columns("opinion-clusters", columns) is profile_from_columns(
+        "clusters", columns
+    )
+
+
+@pytest.mark.parametrize("resource", sorted(RESOURCES))
+def test_every_registry_entry_explains_itself(resource):
+    """A registry entry overrides derivation, so it has to say why."""
+    assert RESOURCES[resource].rationale
+
+
+# ----------------------------------------------------------- undecidable cases
+
+
+def test_a_resource_with_no_id_defers_to_the_caller():
+    profile = profile_from_columns("mystery", ["volume", "reporter", "page"])
+
+    assert profile.entity_key is None
+    assert "pass entity_key explicitly" in profile.rationale
+
+
+# ------------------------------------------------------------------ suggestion
+
+
+def test_suggestion_renders_spec_kwargs():
+    suggestion = ProfileSuggestion(
+        resource="clusters",
+        profile=RESOURCES["clusters"],
+        columns=ENTITY_COLUMNS,
+    )
+    assert suggestion.spec_kwargs() == {
+        "entity_key": ["id"],
+        "cursor_column": "date_modified",
+        "bulk_file_prefix": "opinion-clusters",
+    }
+
+
+def test_suggestion_omits_unset_overrides():
+    suggestion = ProfileSuggestion(
+        resource="dockets",
+        profile=profile_from_columns("dockets", ENTITY_COLUMNS),
+        columns=ENTITY_COLUMNS,
+    )
+    assert suggestion.spec_kwargs() == {"entity_key": ["id"], "cursor_column": "date_modified"}
+
+
+def test_suggestion_str_is_reviewable():
+    text = str(
+        ProfileSuggestion(
+            resource="dockets",
+            profile=profile_from_columns("dockets", ENTITY_COLUMNS),
+            columns=ENTITY_COLUMNS,
+        )
+    )
+    assert "dockets" in text
+    assert "entity_key=['id']" in text

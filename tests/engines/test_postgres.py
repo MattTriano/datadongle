@@ -11,7 +11,14 @@ import pytest
 
 from datadongle.core.cursor import Cursor, CursorSpec
 from datadongle.core.engine import TableRef
-from datadongle.core.schema import Column, ColumnType, GeometrySpec, TableSchema
+from datadongle.core.exceptions import SchemaDriftError, TableNotFoundError
+from datadongle.core.schema import (
+    Column,
+    ColumnType,
+    GeometrySpec,
+    TableSchema,
+    TypeMismatch,
+)
 from datadongle.core.write_mode import SCD2, Append, Upsert, WriteMode
 from datadongle.db.core import DatabaseCredentials
 from datadongle.engines.postgres import PostgresEngine
@@ -138,6 +145,145 @@ def test_ensure_table_defaults_namespace_to_public(engine, mock_cursor):
     assert "create table if not exists public.t" in _executed_sql(mock_cursor)
 
 
+def test_render_create_table_is_bare_and_needs_no_connection(engine):
+    """The public renderer is what you paste into a migration, so no `if not exists`."""
+    ddl = engine.render_create_table(
+        TableRef("crimes", "raw_data"), TableSchema(columns=SAMPLE_COLUMNS), SCD2(entity_key=["id"])
+    )
+    assert "create table raw_data.crimes" in ddl
+    assert "if not exists" not in ddl
+
+
+# --------------------------------------------------- manage_ddl=False (verify only)
+
+
+@pytest.fixture
+def verifying_engine(mock_conn, creds):
+    """An engine that must not create tables — an external tool owns the DDL."""
+    eng = PostgresEngine(creds, manage_ddl=False)
+    eng._conn = mock_conn
+    return eng
+
+
+def _live_table(engine, columns: dict[str, str]) -> None:
+    """Pretend ``columns`` (name -> information_schema data_type) is the live table."""
+    engine.table_exists = lambda target: True
+    engine.table_column_types = lambda target: columns
+
+
+SCD2_PIPELINE = {
+    "ingested_at": "timestamp with time zone",
+    "record_hash": "text",
+    "valid_from": "timestamp with time zone",
+    "valid_to": "timestamp with time zone",
+}
+
+
+def test_verifying_engine_executes_no_ddl_when_the_table_matches(verifying_engine, mock_cursor):
+    schema = TableSchema(columns=[Column("id", ColumnType.TEXT, nullable=False)])
+    _live_table(verifying_engine, {"id": "text", **SCD2_PIPELINE})
+
+    verifying_engine.ensure_table(TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"]))
+
+    assert "create table" not in _executed_sql(mock_cursor)
+
+
+def test_verifying_engine_raises_with_the_ddl_when_the_table_is_missing(verifying_engine):
+    schema = TableSchema(columns=[Column("id", ColumnType.TEXT, nullable=False)])
+    verifying_engine.table_exists = lambda target: False
+
+    with pytest.raises(TableNotFoundError) as exc:
+        verifying_engine.ensure_table(
+            TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"])
+        )
+
+    assert "create table raw_data.crimes" in exc.value.ddl
+    assert "manage_ddl=False" in str(exc.value)
+
+
+def test_verifying_engine_offers_a_migration_for_additive_drift(verifying_engine):
+    schema = TableSchema(
+        columns=[
+            Column("id", ColumnType.TEXT, nullable=False),
+            Column("case_name", ColumnType.TEXT),
+        ]
+    )
+    _live_table(verifying_engine, {"id": "text", **SCD2_PIPELINE})  # case_name not yet added
+
+    with pytest.raises(SchemaDriftError) as exc:
+        verifying_engine.ensure_table(
+            TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"])
+        )
+
+    migration = exc.value.migration
+    assert migration is not None
+    assert 'add column "case_name" text;' in migration
+    assert exc.value.diff.is_additive_only
+
+
+def test_verifying_engine_withholds_a_migration_for_non_additive_drift(verifying_engine):
+    schema = TableSchema(columns=[Column("id", ColumnType.TEXT, nullable=False)])
+    _live_table(verifying_engine, {"id": "text", "dropped_upstream": "text", **SCD2_PIPELINE})
+
+    with pytest.raises(SchemaDriftError) as exc:
+        verifying_engine.ensure_table(
+            TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"])
+        )
+
+    assert exc.value.migration is None
+    assert "not additive" in str(exc.value)
+
+
+# ------------------------------------------------------------------- diff_table
+
+
+def test_diff_table_ignores_engine_owned_pipeline_columns(engine):
+    schema = TableSchema(columns=[Column("id", ColumnType.TEXT, nullable=False)])
+    _live_table(engine, {"id": "text", **SCD2_PIPELINE})
+
+    diff = engine.diff_table(TableRef("crimes", "raw_data"), schema, SCD2(entity_key=["id"]))
+    assert diff.is_empty
+
+
+def test_diff_table_folds_type_spelling_variants(engine):
+    """The schema says `timestamptz`; information_schema says the long form."""
+    schema = TableSchema(columns=[Column("seen_at", ColumnType.TIMESTAMPTZ)])
+    _live_table(engine, {"seen_at": "timestamp with time zone", "ingested_at": "text"})
+
+    diff = engine.diff_table(TableRef("crimes", "raw_data"), schema, Append())
+    assert diff.type_mismatches == []
+
+
+def test_diff_table_reports_a_real_type_change(engine):
+    schema = TableSchema(columns=[Column("amount", ColumnType.DOUBLE)])
+    _live_table(engine, {"amount": "text", "ingested_at": "timestamp with time zone"})
+
+    diff = engine.diff_table(TableRef("crimes", "raw_data"), schema, Append())
+    assert diff.type_mismatches == [
+        TypeMismatch(column="amount", expected="double precision", actual="text")
+    ]
+    assert not diff.is_additive_only
+
+
+def test_diff_table_checks_postgis_columns_by_presence_only(engine):
+    """Geometry and raster both report as USER-DEFINED, so their type says nothing."""
+    schema = TableSchema(
+        columns=[Column("geom", ColumnType.GEOMETRY, geometry=GeometrySpec(kind="Point"))]
+    )
+    _live_table(engine, {"geom": "USER-DEFINED", "ingested_at": "timestamp with time zone"})
+
+    diff = engine.diff_table(TableRef("crimes", "raw_data"), schema, Append())
+    assert diff.is_empty
+
+
+def test_render_migration_goes_through_the_live_diff(engine):
+    schema = TableSchema(columns=[Column("id", ColumnType.TEXT), Column("added", ColumnType.TEXT)])
+    _live_table(engine, {"id": "text", "ingested_at": "timestamp with time zone"})
+
+    sql = engine.render_migration(TableRef("crimes", "raw_data"), schema, Append())
+    assert sql == 'alter table raw_data.crimes add column "added" text;\n'
+
+
 # ------------------------------------------------------------------ open_write
 
 
@@ -200,9 +346,31 @@ def test_table_exists_false(engine):
 
 def test_table_columns(engine):
     engine.query = MagicMock(
-        return_value=pd.DataFrame({"column_name": ["id", "val", "ingested_at"]})
+        return_value=pd.DataFrame(
+            {
+                "column_name": ["id", "val", "ingested_at"],
+                "data_type": ["text", "double precision", "timestamp with time zone"],
+            }
+        )
     )
     assert engine.table_columns(TableRef("t", "s")) == {"id", "val", "ingested_at"}
+
+
+def test_table_column_types(engine):
+    engine.query = MagicMock(
+        return_value=pd.DataFrame(
+            {"column_name": ["id", "geom"], "data_type": ["text", "USER-DEFINED"]}
+        )
+    )
+    assert engine.table_column_types(TableRef("t", "s")) == {
+        "id": "text",
+        "geom": "USER-DEFINED",
+    }
+
+
+def test_table_column_types_is_empty_for_a_missing_table(engine):
+    engine.query = MagicMock(return_value=pd.DataFrame())
+    assert engine.table_column_types(TableRef("t", "s")) == {}
 
 
 def test_geometry_columns(engine):
